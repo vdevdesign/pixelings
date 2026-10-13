@@ -3,6 +3,7 @@ import ReactDOM from 'react-dom/client';
 import { PixelingsChat } from '../components/PixelingsChat';
 import { StardustShop } from '../components/StardustShop';
 import { MiniTrivia } from '../components/MiniTrivia';
+import { RuneDuelMatch } from '../components/RuneDuelMatch';
 import { supabase } from '../lib/supabaseClient';
 import './styles.css';
 
@@ -73,6 +74,7 @@ function App() {
         </article>
         <MiniGames />
       </section>
+      <RuneDuelMatch />
       <MiniTrivia userId={userId} demoMode={isTeacher} />
       <StardustShop userId={userId} demoMode={isTeacher} />
       </> : <>

@@ -31,6 +31,36 @@ h1 em { color: #d8ff64; font-style: normal; }
 .game-buttons button { display: flex; justify-content: space-between; padding: 9px 11px; border: 1px solid #3b3d31; border-radius: 8px; color: #d3d1c7; background: #171715; cursor: pointer; font-size: 11px; text-align: left; }
 .game-buttons button:hover { border-color: #829c3f; }
 .game-buttons span { color: #d8ff64; font: 10px 'DM Mono', monospace; }
+.rune-duel { position: relative; overflow: hidden; margin: 0 0 14px; padding: 24px; border: 1px solid #443f71; border-radius: 16px; background-color: #121326; background-position: center; background-size: cover; box-shadow: 0 18px 55px #0008; }
+.rune-duel::before { position: absolute; inset: 0; content: ''; pointer-events: none; background: radial-gradient(circle at 12% 5%, #6d48a633, transparent 32%), linear-gradient(135deg, #0e1022e8, #171329d9); }
+.rune-duel > * { position: relative; }
+.rune-duel-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
+.rune-duel h2 { margin: 10px 0 5px; color: #f6f2ff; font-size: clamp(25px, 4vw, 36px); letter-spacing: -.05em; }
+.rune-duel h2 em { color: #d6a7ff; font-style: normal; }
+.rune-duel-header p { margin: 0; color: #aaa4c0; font-size: 12px; }
+.rune-score { flex-shrink: 0; padding: 9px 12px; border: 1px solid #8b6ac766; border-radius: 10px; background: #0e0f20b8; text-align: right; }
+.rune-score span { display: block; color: #aaa4c0; font: 9px 'DM Mono', monospace; letter-spacing: .12em; }
+.rune-score strong { color: #ffd58a; font: 18px 'DM Mono', monospace; }
+.rune-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; max-width: 560px; margin: 22px auto 0; padding: 12px; border: 1px solid #7563aa44; border-radius: 14px; background: #080a18b8; }
+.rune-card { position: relative; aspect-ratio: 1; min-width: 0; padding: 0; border: 0; border-radius: 50%; color: #fff; background: transparent; cursor: pointer; perspective: 700px; }
+.rune-card:disabled { cursor: default; }
+.rune-card-face { position: absolute; inset: 0; display: grid; place-items: center; overflow: hidden; border-radius: 50%; backface-visibility: hidden; transition: transform .32s ease, opacity .32s ease; }
+.rune-card-face img { width: 100%; height: 100%; object-fit: contain; }
+.rune-card-face > span { position: absolute; color: #dbc9ff; font-size: clamp(22px, 5vw, 34px); text-shadow: 0 0 16px currentColor; }
+.rune-card-back { border: 1px solid #8e70ceaa; background: radial-gradient(circle, #342557, #121329 70%); box-shadow: inset 0 0 17px #b58cff33, 0 0 12px #5b42a855; }
+.rune-card-back span { color: #b88cff; }
+.rune-card-front { transform: rotateY(180deg); border: 1px solid currentColor; background: #16152a; box-shadow: 0 0 13px currentColor; }
+.rune-card-front img { position: absolute; }
+.rune-card-front > span { position: relative; }
+.rune-card-front b { position: absolute; bottom: 12%; color: #fff; font: 8px 'DM Mono', monospace; letter-spacing: .08em; text-transform: uppercase; text-shadow: 0 1px 5px #000; }
+.rune-card.is-flipped .rune-card-back { transform: rotateY(180deg); }
+.rune-card.is-flipped .rune-card-front { transform: rotateY(360deg); }
+.rune-card.is-matched { opacity: .18; transform: scale(.88); }
+.rune-card.is-clashing .rune-card-front { animation: rune-spark .55s ease-in-out 2; }
+.rune-gale { color: #70d6ff; }.rune-flame { color: #ff986f; }.rune-shadow { color: #d29cff; }.rune-stone { color: #b6c39d; }
+.rune-restart { display: block; margin: 18px auto 0; padding: 9px 15px; border: 1px solid #8c6fc1; border-radius: 8px; color: #eadcff; background: #302052; cursor: pointer; font: 11px 'DM Mono', monospace; }
+.rune-restart:hover { background: #442b6d; }
+@keyframes rune-spark { 25% { transform: rotateY(360deg) scale(1.09); filter: brightness(1.8); } 70% { transform: rotateY(360deg) translateX(4px); } }
 .trivia-card { margin-bottom: 14px; }
 .trivia-heading, .trivia-meta, .trivia-footer { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .trivia-heading h2 { margin-bottom: 0; }
