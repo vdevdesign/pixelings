@@ -113,6 +113,16 @@ export function usePixelingsChat(roomName: string, currentUserId: string, demoMo
           });
         }
       )
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'profiles' },
+        (payload) => {
+          const profile = payload.new as { id: string; username: string; approved_nickname?: string | null };
+          setParticipants((prev) => prev.map((participant) => participant.id === profile.id
+            ? { ...participant, name: profile.approved_nickname || profile.username }
+            : participant));
+        }
+      )
       .subscribe();
 
     return () => {
@@ -122,7 +132,7 @@ export function usePixelingsChat(roomName: string, currentUserId: string, demoMo
 
   // Send message helper enforcing client-side live check before RPC/Insert
   const sendMessage = async (content: string, recipientId?: string, senderName: string = 'Pixel') => {
-    if (!isLive) throw new Error("Chat is currently locked. Session is not LIVE.");
+    if (!isLive && !isModerator) throw new Error("Chat is currently locked. Session is not LIVE.");
 
     if (demoMode) {
       const message: Message = {
@@ -149,6 +159,12 @@ export function usePixelingsChat(roomName: string, currentUserId: string, demoMo
     if (error) throw error;
   };
 
+  const requestNickname = async (requested: string) => {
+    if (demoMode) return;
+    const { error } = await supabase.rpc('request_nickname', { requested: requested.trim() });
+    if (error) throw error;
+  };
+
   // DM / Admin purge functionality
   const purgeChat = async () => {
     if (demoMode) {
@@ -172,8 +188,8 @@ export function usePixelingsChat(roomName: string, currentUserId: string, demoMo
     await supabase.from('messages').update({ status: 'rejected' }).eq('id', message.id);
   };
 
-  const toggleLive = async (reason = '') => {
-    const next = !isLive;
+  const toggleLive = async (reason = '', requestedState?: boolean) => {
+    const next = requestedState ?? !isLive;
     const previousLockState = lockState;
     const nextLockState = next ? { reason: '' } : { reason: reason.trim() || 'Chat temporarily locked by a moderator.' };
     setIsLive(next);
@@ -193,5 +209,5 @@ export function usePixelingsChat(roomName: string, currentUserId: string, demoMo
     }
   };
 
-  return { messages, reviewQueue: isModerator ? reviewQueue : [], participants, isLive, lockState, loading, sendMessage, purgeChat, approveMessage, rejectMessage, toggleLive };
+  return { messages, reviewQueue: isModerator ? reviewQueue : [], participants, isLive, lockState, loading, sendMessage, requestNickname, purgeChat, approveMessage, rejectMessage, toggleLive };
 }

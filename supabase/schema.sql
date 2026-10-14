@@ -215,7 +215,7 @@ create policy "Users can view approved messages" on public.messages for select u
 );
 drop policy if exists "Authenticated users can send messages" on public.messages;
 create policy "Authenticated users can send messages" on public.messages for insert
-  to authenticated with check (sender_id = auth.uid() and exists (select 1 from public.sessions where id = session_id and status = 'live'));
+  to authenticated with check (sender_id = auth.uid() and exists (select 1 from public.sessions where id = session_id and (status = 'live' or public.is_moderator())));
 drop policy if exists "Moderators can review messages" on public.messages;
 create policy "Moderators can review messages" on public.messages for update
   to authenticated using (public.is_moderator()) with check (public.is_moderator());
@@ -298,6 +298,9 @@ begin
   end if;
   if not exists (select 1 from pg_publication_tables where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'messages') then
     alter publication supabase_realtime add table public.messages;
+  end if;
+  if not exists (select 1 from pg_publication_tables where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'profiles') then
+    alter publication supabase_realtime add table public.profiles;
   end if;
 end $$;
 

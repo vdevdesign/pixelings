@@ -11,7 +11,7 @@ const fallbackItems: ShopItem[] = [
   { id: 'cyber-style', name: 'Cyberpunk Chat Style', description: 'A dark neon skin for your chat messages.', category: 'Chat', price: 220, emoji: '⌁' },
 ];
 
-export function StardustShop({ userId, demoMode }: { userId: string; demoMode?: boolean }) {
+export function StardustShop({ accountId, demoMode }: { accountId: string; demoMode?: boolean }) {
   const [items, setItems] = React.useState<ShopItem[]>(fallbackItems);
   const [owned, setOwned] = React.useState<string[]>([]);
   const [balance, setBalance] = React.useState(650);
@@ -22,14 +22,16 @@ export function StardustShop({ userId, demoMode }: { userId: string; demoMode?: 
     if (demoMode) return;
     supabase.from('stardust_shop').select('id,name,description,category,price,emoji').eq('active', true).order('sort_order')
       .then(({ data }) => { if (data?.length) setItems(data as ShopItem[]); });
-    if (userId) supabase.from('stardust_wallets').select('balance').eq('user_id', userId).single().then(({ data }) => { if (data) setBalance(data.balance); });
-    if (userId) supabase.from('stardust_inventory').select('item_id').eq('user_id', userId).then(({ data }) => { if (data) setOwned(data.map((entry) => entry.item_id)); });
-  }, [demoMode, userId]);
+    // Inventory belongs to the authenticated account, not the selected child
+    // profile (which is only a chat identity).
+    if (accountId) supabase.from('stardust_wallets').select('balance').eq('user_id', accountId).single().then(({ data }) => { if (data) setBalance(data.balance); });
+    if (accountId) supabase.from('stardust_inventory').select('item_id').eq('user_id', accountId).then(({ data }) => { if (data) setOwned(data.map((entry) => entry.item_id)); });
+  }, [demoMode, accountId]);
 
   const buy = async (item: ShopItem) => {
     if (owned.includes(item.id)) return setNotice(`${item.name} is already in your collection.`);
     if (balance < item.price) return setNotice('Not enough Stardust yet — play a minigame!');
-    if (!demoMode && userId) {
+    if (!demoMode && accountId) {
       const { data: remaining, error } = await supabase.rpc('buy_stardust_item', { item: item.id });
       if (error) return setNotice(error.message.includes('Not enough') ? 'Not enough Stardust yet — play a minigame!' : 'Could not complete that purchase.');
       setBalance(remaining as number);

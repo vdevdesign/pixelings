@@ -1,0 +1,328 @@
+/* Mobile-only layout overrides. Keep desktop presentation in styles.css. */
+@media (max-width: 650px) {
+  body {
+    overflow-x: hidden;
+  }
+
+  .app-shell {
+    width: min(100% - 24px, 760px);
+    padding: 24px 0 112px;
+  }
+
+  .site-nav {
+    flex-wrap: nowrap;
+    gap: 4px;
+    margin: 0 -6px 44px;
+    padding: 0 6px 6px;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+
+  .brand-mark {
+    flex-basis: 40px;
+    width: 40px;
+    height: 40px;
+    margin-right: 4px;
+  }
+
+  .login-logo {
+    width: 96px;
+    height: 96px;
+  }
+
+  .site-nav::-webkit-scrollbar {
+    display: none;
+  }
+
+  .nav-tab {
+    flex: 0 0 auto;
+    min-height: 40px;
+    padding: 10px 12px;
+  }
+
+  .nav-account {
+    display: none;
+  }
+
+  .hero {
+    margin-bottom: 26px;
+  }
+
+  .eyebrow {
+    font-size: 9px;
+    letter-spacing: .1em;
+  }
+
+  h1 {
+    margin-top: 13px;
+    font-size: clamp(40px, 16vw, 62px);
+  }
+
+  .hero-copy {
+    font-size: 14px;
+  }
+
+  .home-grid,
+  .shop-grid,
+  .news-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .feature-card,
+  .home-section,
+  .rune-duel {
+    padding: 18px;
+  }
+
+  .feature-card {
+    min-height: 0;
+  }
+
+  .home-section {
+    margin-top: 28px;
+  }
+
+  .section-heading,
+  .rune-duel-header {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 13px;
+  }
+
+  .section-heading h2,
+  .feature-card h2,
+  .rune-duel h2 {
+    font-size: 28px;
+  }
+
+  .wallet,
+  .shop-heading-actions {
+    width: 100%;
+  }
+
+  .shop-heading-actions > * {
+    flex: 1;
+  }
+
+  .story-card {
+    gap: 11px;
+    padding: 14px;
+  }
+
+  .story-icon {
+    flex-basis: 32px;
+    width: 32px;
+    height: 32px;
+  }
+
+  .ptl-post-actions,
+  .ptl-editor-actions {
+    align-items: stretch;
+  }
+
+  .ptl-post-actions > *,
+  .ptl-editor-actions > * {
+    min-height: 34px;
+  }
+
+  .rune-score {
+    align-self: flex-start;
+  }
+
+  .rune-grid {
+    gap: 7px;
+    margin-top: 18px;
+    padding: 8px;
+  }
+
+  .rune-card-front b {
+    font-size: 7px;
+  }
+
+  .trivia-heading,
+  .trivia-footer {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .trivia-options {
+    grid-template-columns: 1fr;
+  }
+
+  .trivia-next {
+    width: 100%;
+    min-height: 36px;
+  }
+
+  .chat-header {
+    flex-wrap: wrap;
+    align-items: stretch;
+    gap: 12px;
+    padding: 15px;
+  }
+
+  .chat-workspace {
+    grid-template-columns: 1fr;
+    gap: 10px;
+  }
+
+  .room-menu {
+    padding: 13px;
+  }
+
+  .room-menu-header {
+    min-height: 56px;
+    margin-bottom: 12px;
+    padding: 12px;
+    font-size: 11px;
+  }
+
+  .room-options {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .chat-title {
+    min-width: 0;
+  }
+
+  .chat-title h3 {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .moderator-actions {
+    width: 100%;
+  }
+
+  .moderator-actions button {
+    flex: 1;
+    min-height: 36px;
+  }
+
+  .chat-controls,
+  .profile-tools {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .chat-controls {
+    width: 100%;
+    flex: 1 1 100%;
+    margin-left: 0;
+  }
+
+  .room-control,
+  .profile-tools {
+    width: 100%;
+  }
+
+  .room-control select,
+  .profile-tools input,
+  .profile-tools .nickname-button {
+    min-height: 36px;
+  }
+
+  .profile-tools input {
+    width: 100%;
+  }
+
+  .messages {
+    height: clamp(220px, calc(100dvh - 450px), 360px);
+    min-height: 0;
+    max-height: none;
+    padding: 18px 15px;
+  }
+
+  .bubble {
+    max-width: 92%;
+    padding: 10px 12px;
+    font-size: 13px;
+  }
+
+  .composer {
+    padding: 14px 15px 15px;
+  }
+
+  .whisper-row {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .whisper-select,
+  .message-input,
+  .send-button {
+    min-height: 40px;
+  }
+
+  .message-form {
+    gap: 7px;
+  }
+
+  .send-button {
+    padding: 0 14px;
+  }
+
+  .chat-status-banner {
+    align-items: flex-start;
+    margin: 12px 15px 0;
+  }
+
+  .chat-status-banner button {
+    flex-shrink: 0;
+    min-height: 34px;
+  }
+
+  .page-notification {
+    top: 14px;
+    right: 14px;
+  }
+
+  .notification-box {
+    position: fixed;
+    top: 66px;
+    right: 12px;
+    left: 12px;
+    width: auto;
+    max-height: 65vh;
+  }
+
+  .review-item {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 9px;
+  }
+
+  .review-actions button {
+    flex: 1;
+    min-height: 34px;
+  }
+
+  .mini-chat {
+    right: 12px;
+    bottom: 12px;
+    width: calc(100vw - 24px);
+  }
+
+  .mini-chat-messages {
+    height: min(34vh, 240px);
+  }
+
+  .dialog-backdrop {
+    align-items: end;
+    padding: 12px;
+  }
+
+  .lock-dialog {
+    padding: 20px;
+  }
+
+  .dialog-actions {
+    justify-content: stretch;
+  }
+
+  .dialog-actions button {
+    flex: 1;
+    min-height: 40px;
+  }
+}

@@ -5,11 +5,14 @@ import { StardustShop } from '../components/StardustShop';
 import { MiniTrivia } from '../components/MiniTrivia';
 import { RuneDuelMatch } from '../components/RuneDuelMatch';
 import { MiniChat } from '../components/MiniChat';
+import { PtlPosts } from '../components/PtlPosts';
 import { ChatRoom } from '../components/chatRooms';
 import { supabase } from '../lib/supabaseClient';
 import './styles.css';
+import './mobile.css';
 
 function App() {
+  const showInstantTest = import.meta.env.DEV && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
   const [loginType, setLoginType] = React.useState<'staff' | 'kid'>('kid');
   const [email, setEmail] = React.useState('');
   const [emailPassword, setEmailPassword] = React.useState('');
@@ -19,7 +22,11 @@ function App() {
   const [computer, setComputer] = React.useState('');
   const [loggedIn, setLoggedIn] = React.useState(false);
   const [isTeacher, setIsTeacher] = React.useState(false);
+  const [isInstantPreview, setIsInstantPreview] = React.useState(false);
   const [userId, setUserId] = React.useState('');
+  // The authenticated Supabase account owns wallet/inventory data. Keep this
+  // separate from userId, which is the selected child profile used by chat.
+  const [authUserId, setAuthUserId] = React.useState('');
   const [role, setRole] = React.useState('computer');
   const [approvedNickname, setApprovedNickname] = React.useState('');
   const [loginError, setLoginError] = React.useState('');
@@ -30,6 +37,10 @@ function App() {
   const [resetNotice, setResetNotice] = React.useState('');
   const [activeTab, setActiveTab] = React.useState<'home' | 'chat' | 'games' | 'shop'>('home');
   const [chatRoom, setChatRoom] = React.useState<ChatRoom>('Blender');
+  const [allChatsLocked, setAllChatsLocked] = React.useState(false);
+  const [chatLockNotice, setChatLockNotice] = React.useState('');
+  const [changingAllChats, setChangingAllChats] = React.useState(false);
+  const [manualChatOverrides, setManualChatOverrides] = React.useState<Record<string, boolean>>({});
 
   React.useEffect(() => {
     const { data: authListener } = supabase.auth.onAuthStateChange(async (event, session) => {
@@ -39,12 +50,14 @@ function App() {
         return;
       }
       if (!session?.user) return;
+      setAuthUserId(session.user.id);
       setUserId(session.user.id);
       const { data: profile } = await supabase.from('profiles').select('username, role, approved_nickname').eq('id', session.user.id).single();
       if (profile) {
         setComputer(profile.username);
         setRole(profile.role);
         setIsTeacher(profile.role !== 'computer');
+        setIsInstantPreview(false);
         setApprovedNickname(profile.approved_nickname || '');
         setLoggedIn(true);
       }
@@ -64,6 +77,7 @@ function App() {
         password: emailPassword,
       });
       if (error || !data.user) { setFailedStaffAttempts((attempts) => attempts + 1); setLoginError('That work email or password was not recognized.'); return; }
+      setAuthUserId(data.user.id);
       return;
     }
     if (!kidEmailVerified) {
@@ -92,12 +106,46 @@ function App() {
     });
     const selectedChild = Array.isArray(child) ? child[0] : child;
     if (error || !selectedChild) { setLoginError('That first name and code were not recognized.'); return; }
+    setAuthUserId(classroom.user.id);
     setUserId(selectedChild.id);
     setComputer(selectedChild.username);
     setRole('computer');
     setApprovedNickname(selectedChild.approved_nickname || '');
     setIsTeacher(false);
+    setIsInstantPreview(false);
       setLoggedIn(true);
+  };
+
+  const toggleAllChats = async () => {
+    const nextLocked = !allChatsLocked;
+    setChangingAllChats(true);
+    setChatLockNotice('');
+    if (!isTeacher) {
+      setChangingAllChats(false);
+      return;
+    }
+    if (!email) {
+      setAllChatsLocked(nextLocked);
+      setManualChatOverrides({});
+      setChangingAllChats(false);
+      return;
+    }
+    const { error } = isTeacher
+      ? await supabase.from('sessions').update({
+        status: nextLocked ? 'locked' : 'live',
+        lock_reason: nextLocked ? 'All chats are paused by a teacher or moderator.' : null,
+        locked_at: nextLocked ? new Date().toISOString() : null,
+        locked_by: nextLocked ? userId : null,
+      }).neq('name', '')
+      : { error: null };
+    if (error) {
+      setChatLockNotice('Could not update all chat rooms. Please try again.');
+    } else {
+      setAllChatsLocked(nextLocked);
+      setManualChatOverrides({});
+      setChatLockNotice(nextLocked ? 'All chat rooms are locked.' : 'All chat rooms are unlocked.');
+    }
+    setChangingAllChats(false);
   };
 
   const requestPasswordReset = async () => {
@@ -121,19 +169,22 @@ function App() {
   };
 
   // TEST-ONLY: remove this handler and the matching button below before launch.
-  const handleInstantTestAccess = () => {
-    setUserId('test-moderator');
-    setComputer('Test Moderator');
-    setRole('moderator');
-    setIsTeacher(true);
+  const handleInstantTestAccess = (view: 'teacher' | 'student' | React.MouseEvent<HTMLButtonElement> = 'teacher') => {
+    const teacherView = view !== 'student';
+    setAuthUserId('');
+    setUserId(teacherView ? 'test-moderator' : 'test-student');
+    setComputer(teacherView ? 'Test Teacher' : 'Test Student');
+    setRole(teacherView ? 'moderator' : 'computer');
+    setIsTeacher(teacherView);
+    setIsInstantPreview(true);
     setApprovedNickname('');
     setLoggedIn(true);
   };
 
   if (resetMode) return <main className="app-shell login-shell">
     <section className="login-card">
-      <div className="eyebrow"><span className="eyebrow-dot" /> PIXELS TECH LAB</div>
-      <h1 className="login-title">Reset <em>password</em></h1>
+    <img className="brand-logo login-logo" src="/pixels-tech-lab-logo.png" alt="Pixels Tech Lab" />
+    <h1 className="login-title">Reset <em>password</em></h1>
       <p className="hero-copy">Choose a new password for your teacher or moderator account.</p>
       <form onSubmit={saveNewPassword}>
         <label className="login-label" htmlFor="new-password">New password</label>
@@ -148,7 +199,7 @@ function App() {
 
   if (!loggedIn) return <main className="app-shell login-shell">
     <section className="login-card">
-      <div className="eyebrow"><span className="eyebrow-dot" /> PIXELS TECH LAB</div>
+      <img className="brand-logo login-logo" src="/pixels-tech-lab-logo.png" alt="Pixels Tech Lab" />
       <h1 className="login-title">Pixelings <em>Chat</em></h1>
       <p className="hero-copy">Use your work email, or sign in to the classroom and choose your own Pixelings account.</p>
       {!kidEmailVerified && <div className="login-tabs" role="tablist" aria-label="Login type">
@@ -179,23 +230,41 @@ function App() {
       <button className="login-button" disabled={kidEmailVerified ? !firstName || accessCode.length < 4 : !email || !emailPassword} onClick={handleLogin}>{kidEmailVerified ? 'Verify account' : (loginType === 'kid' ? 'Continue' : 'Sign in')}</button>
       {loginType === 'staff' && failedStaffAttempts > 0 && <button type="button" className="reset-link-button" onClick={requestPasswordReset}>Forgot password?</button>}
       {/* TEST-ONLY: remove this button before launch. */}
-      {import.meta.env.DEV && <button type="button" className="instant-test-button" onClick={handleInstantTestAccess}>⚡ Instant access (testing only)</button>}
+      {showInstantTest && <button type="button" className="instant-test-button" onClick={handleInstantTestAccess}>⚡ Instant access (testing only)</button>}
+      {showInstantTest && <div className="instant-test-panel">
+        <div className="instant-test-kicker">DEVELOPER PREVIEW</div>
+        <p>Open the app as either side of the classroom.</p>
+        <div className="instant-test-actions">
+          <button type="button" className="instant-test-button teacher-test-button" onClick={() => handleInstantTestAccess('teacher')}>
+            <strong>Teacher view</strong><span>Moderation &amp; classroom controls</span>
+          </button>
+          <button type="button" className="instant-test-button student-test-button" onClick={() => handleInstantTestAccess('student')}>
+            <strong>Student view</strong><span>Regular student permissions</span>
+          </button>
+        </div>
+      </div>}
       <small className="login-help">Kids share one classroom email, then use their own first name and code.</small>
     </section>
   </main>;
 
   return (
-    <main className="app-shell">
+    <main className={`app-shell ${activeTab === 'chat' ? 'chat-page-shell' : ''}`}>
       <nav className="site-nav" aria-label="Primary navigation">
+        <button className="brand-mark" type="button" onClick={() => setActiveTab('home')} aria-label="Go to Pixels Tech Lab home">
+          <img src="/pixels-tech-lab-logo.png" alt="Pixels Tech Lab" />
+        </button>
         <button className={`nav-tab ${activeTab === 'home' ? 'active' : ''}`} onClick={() => setActiveTab('home')}>Home</button>
         <button className={`nav-tab ${activeTab === 'chat' ? 'active' : ''}`} onClick={() => setActiveTab('chat')}>Chat</button>
         <button className={`nav-tab ${activeTab === 'games' ? 'active' : ''}`} onClick={() => setActiveTab('games')}>Mini Games</button>
         <button className={`nav-tab ${activeTab === 'shop' ? 'active' : ''}`} onClick={() => setActiveTab('shop')}>Stardust Shop</button>
+        {isTeacher && <button className={`global-chat-lock ${allChatsLocked ? 'global-chat-unlock' : ''}`} onClick={toggleAllChats} disabled={changingAllChats}>
+          {changingAllChats ? 'Updating…' : allChatsLocked ? 'Unlock all chats' : 'Lock all chats'}
+        </button>}
         <span className="nav-account">{approvedNickname || computer}</span>
       </nav>
+      {chatLockNotice && <p className="global-chat-notice" role="status">{chatLockNotice}</p>}
       {activeTab === 'home' ? <>
       <section className="hero home-hero">
-        <div className="eyebrow"><span className="eyebrow-dot" /> PIXELS TECH LAB / COMMUNITY LOUNGE</div>
         <h1>Welcome <em>Pixelings!</em></h1>
         <p className="hero-copy">A cozy little corner to chat and spend your Stardust.</p>
       </section>
@@ -216,7 +285,7 @@ function App() {
           <span className="section-label">LATEST UPDATES</span>
         </div>
         <p className="section-copy">Short updates, announcements, and useful things happening around Pixels Tech Lab.</p>
-        <div className="news-grid">
+        <div className="legacy-static"><div className="news-grid">
           <article className="news-card">
             <div className="news-meta">LAB NOTE · OCT 14, 2026</div>
             <h3>Welcome to the new Pixelings lounge</h3>
@@ -227,7 +296,8 @@ function App() {
             <h3>More ways to show your work</h3>
             <p>We are planning new ways for Pixelings to spotlight projects, ideas, and creative experiments.</p>
           </article>
-        </div>
+        </div></div>
+        <PtlPosts section="news" canEdit={role === 'teacher'} userId={userId} />
       </section>
       <section className="home-section tales-section">
         <div className="section-heading home-section-heading">
@@ -238,35 +308,34 @@ function App() {
           <span className="section-label">STORIES & SPOTLIGHTS</span>
         </div>
         <p className="section-copy">A home for behind-the-scenes stories, project spotlights, creative lessons, and the people who make the lab interesting.</p>
-        <div className="story-card">
+        <div className="legacy-static"><div className="story-card">
           <div className="story-icon">✦</div>
           <div>
             <div className="news-meta">THE IDEA BEHIND THE SECTION</div>
             <h3>Show the messy, clever, human side of making things.</h3>
             <p>Tales can feature a Pixelings project, a quick lesson learned, an interview, or a peek at how something in the lab came together.</p>
           </div>
-        </div>
+        </div></div>
+        <PtlPosts section="tales" canEdit={role === 'teacher'} userId={userId} />
       </section>
       </>
       : activeTab === 'chat' ? <>
-      <section className="hero chat-hero">
-        <div className="eyebrow"><span className="eyebrow-dot" /> PIXELS TECH LAB / COMMUNITY LOUNGE</div>
+      <section className="chat-page-title">
         <h1>Pixelings <em>Chat</em></h1>
-        <p className="hero-copy">A cozy, real-time chat for the people making and playing together.</p>
       </section>
-      <PixelingsChat room={chatRoom} onRoomChange={setChatRoom} currentUserId={userId} currentUsername={approvedNickname || computer} currentUsernameHandle={computer} isAdmin={isTeacher || role !== 'computer'} isModerator={isTeacher || role !== 'computer'} demoMode={isTeacher} />
+      <PixelingsChat room={chatRoom} onRoomChange={setChatRoom} currentUserId={userId} currentUsername={approvedNickname || computer} currentUsernameHandle={computer} isAdmin={isTeacher || role !== 'computer'} isModerator={isTeacher || role !== 'computer'} demoMode={isInstantPreview} allChatsLocked={allChatsLocked} manualChatOverride={manualChatOverrides[chatRoom]} onManualStatusChange={(live) => setManualChatOverrides((overrides) => ({ ...overrides, [chatRoom]: live }))} />
       <p className="demo-note">Preview mode · moderation is required for flagged messages</p>
       </>
       : activeTab === 'games' ? <>
-        <section className="hero"><div className="eyebrow"><span className="eyebrow-dot" /> PIXELS TECH LAB / ARCADE</div><h1>Mini <em>Games</em></h1><p className="hero-copy">Take a quick break, test your memory, and collect a little Stardust.</p></section>
+        <section className="hero"><h1>Mini <em>Games</em></h1><p className="hero-copy">Take a quick break, test your memory, and collect a little Stardust.</p></section>
         <RuneDuelMatch />
-        <MiniTrivia userId={userId} demoMode={isTeacher} />
+        <MiniTrivia userId={userId} demoMode={isInstantPreview} />
       </>
       : <>
-        <section className="hero"><div className="eyebrow"><span className="eyebrow-dot" /> PIXELS TECH LAB / REWARDS</div><h1>Stardust <em>Shop</em></h1><p className="hero-copy">Spend your sparkle on chat upgrades, identity flexes, and delightful chaos.</p></section>
-        <StardustShop userId={userId} demoMode={isTeacher} />
+        <section className="hero"><h1>Stardust <em>Shop</em></h1><p className="hero-copy">Spend your sparkle on chat upgrades, identity flexes, and delightful chaos.</p></section>
+        <StardustShop accountId={authUserId} demoMode={isInstantPreview} />
       </>}
-      {activeTab !== 'chat' && <MiniChat room={chatRoom} onRoomChange={setChatRoom} userId={userId} username={approvedNickname || computer} demoMode={isTeacher} />}
+      {activeTab !== 'chat' && <MiniChat room={chatRoom} onRoomChange={setChatRoom} userId={userId} username={approvedNickname || computer} demoMode={isInstantPreview} />}
     </main>
   );
 }

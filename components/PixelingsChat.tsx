@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { usePixelingsChat } from '../src/hooks/usePixelingsChat';
 import { moderationReason } from '../lib/moderation';
 import { CHAT_ROOMS, ChatRoom } from './chatRooms';
@@ -12,6 +12,9 @@ interface ChatProps {
   isAdmin?: boolean;
   demoMode?: boolean;
   isModerator?: boolean;
+  allChatsLocked?: boolean;
+  manualChatOverride?: boolean;
+  onManualStatusChange?: (isLive: boolean) => void;
 }
 
 export const PixelingsChat: React.FC<ChatProps> = ({
@@ -23,8 +26,11 @@ export const PixelingsChat: React.FC<ChatProps> = ({
   isAdmin = false,
   demoMode = false,
   isModerator = false,
+  allChatsLocked = false,
+  manualChatOverride,
+  onManualStatusChange,
 }) => {
-  const { messages, reviewQueue, participants, isLive, lockState, loading, sendMessage, purgeChat, approveMessage, rejectMessage, toggleLive } = usePixelingsChat(
+  const { messages, reviewQueue, participants, isLive, lockState, loading, sendMessage, requestNickname: requestNicknameToServer, purgeChat, approveMessage, rejectMessage, toggleLive } = usePixelingsChat(
     room,
     currentUserId,
     demoMode,
@@ -37,23 +43,28 @@ export const PixelingsChat: React.FC<ChatProps> = ({
   const [nicknameDraft, setNicknameDraft] = useState(currentUsername);
   const [nicknameNotice, setNicknameNotice] = useState('');
   const [showModeration, setShowModeration] = useState(false);
-  const [showLockDialog, setShowLockDialog] = useState(false);
   const [lockReasonDraft, setLockReasonDraft] = useState('Class chat is paused while we reset the room.');
   const [statusNotice, setStatusNotice] = useState('');
   const [openUsername, setOpenUsername] = useState<string | null>(null);
   const [nicknameQueue, setNicknameQueue] = useState<Array<{ id: string; user: string; nickname: string; reason: string }>>(
     isModerator ? [{ id: 'nickname-1', user: 'Pixels7', nickname: 'CodeWizard', reason: 'All nicknames require approval' }] : []
   );
+  const liveUsername = participants.find((participant) => participant.id === currentUserId)?.name || currentUsername;
+
+  useEffect(() => {
+    setNickname(liveUsername);
+    setNicknameDraft(liveUsername);
+  }, [liveUsername]);
 
   const handleSend = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!input.trim() || !isLive) return;
+    if (!input.trim() || (!chatIsLive && !isModerator)) return;
 
     try {
       await sendMessage(
         input, 
         whisperTarget.trim() ? whisperTarget : undefined, 
-        currentUsername
+        liveUsername
       );
       setInput('');
     } catch (err) {
@@ -61,12 +72,18 @@ export const PixelingsChat: React.FC<ChatProps> = ({
     }
   };
 
-  const requestNickname = () => {
+  const requestNickname = async () => {
     const requested = nicknameDraft.trim();
     if (!requested || requested === nickname) return;
-    const reason = moderationReason(requested);
-    setNicknameQueue((prev) => [...prev, { id: crypto.randomUUID(), user: currentUsername, nickname: requested, reason: reason || 'Nickname requires teacher approval' }]);
-    setNicknameNotice('Nickname submitted for teacher approval.');
+    try {
+      await requestNicknameToServer(requested);
+      const reason = moderationReason(requested);
+      setNicknameQueue((prev) => [...prev, { id: crypto.randomUUID(), user: currentUsername, nickname: requested, reason: reason || 'Nickname requires teacher approval' }]);
+      setNicknameNotice('Nickname submitted for teacher approval.');
+    } catch (error) {
+      console.error('Failed to request nickname:', error);
+      setNicknameNotice('Could not submit nickname request. Please try again.');
+    }
   };
 
   const approveNickname = (id: string, requested: string, user: string) => {
@@ -74,17 +91,20 @@ export const PixelingsChat: React.FC<ChatProps> = ({
     setNicknameQueue((prev) => prev.filter((item) => item.id !== id));
   };
 
-  const handleStatusChange = async (event: React.FormEvent) => {
-    event.preventDefault();
+  const handleStatusChange = async () => {
+    const wasLive = chatIsLive;
     try {
-      await toggleLive(isLive ? lockReasonDraft : '');
-      setShowLockDialog(false);
-      setStatusNotice(isLive ? 'Chat unlocked. Everyone can post again.' : 'Chat locked for this room.');
+      await toggleLive(wasLive ? lockReasonDraft : '', !wasLive);
+      onManualStatusChange?.(!wasLive);
+      setStatusNotice(wasLive ? 'Chat locked for this room.' : 'Chat unlocked. Everyone can post again.');
     } catch (error) {
       console.error('Failed to update chat status:', error);
       setStatusNotice('Could not update the room status. Please try again.');
     }
   };
+
+  const chatIsLive = allChatsLocked ? manualChatOverride === true : manualChatOverride ?? isLive;
+  const canPost = chatIsLive || isModerator;
 
   if (loading) {
     return <div className="chat-card"><div className="composer">Loading Pixelings Chat...</div></div>;
@@ -111,25 +131,31 @@ export const PixelingsChat: React.FC<ChatProps> = ({
           </div>)}
         </aside>}
       </div>}
-      <div className={`chat-card ${isLive ? 'chat-live' : 'chat-locked'}`}>
+      <div className="chat-workspace">
+      <aside className="room-menu" aria-label="Chat rooms">
+        <div className="room-menu-header">CLASSROOMS</div>
+        <div className="room-options">
+          {CHAT_ROOMS.map((option) => <button key={option} type="button" className={`room-option ${room === option ? 'active' : ''}`} onClick={() => onRoomChange(option)} aria-current={room === option ? 'page' : undefined}>{option}<span className="room-option-sparkles" aria-hidden="true">✦</span></button>)}
+        </div>
+      </aside>
+      <div className={`chat-card ${chatIsLive ? 'chat-live' : 'chat-locked'}`}>
       
       {/* 1. Header & Live Indicator */}
       <div className="chat-header">
         <div className="chat-title">
-          <span className={`status-dot ${isLive ? '' : 'locked'}`} />
+          <span className={`status-dot ${chatIsLive ? '' : 'locked'}`} />
           <h3>{room}</h3>
-          <span className="status-label">{isLive ? 'LIVE' : 'LOCKED'}</span>
+          <span className={`status-label ${chatIsLive ? 'live' : 'locked'}`}>{chatIsLive ? 'LIVE' : 'LOCKED'}</span>
         </div>
 
         {/* DM Controls */}
         {isModerator && <div className="moderator-actions">
-            <button onClick={() => setShowLockDialog(true)} className={`toggle-button ${isLive ? 'lock-action' : 'unlock-action'}`} aria-label={isLive ? `Lock ${room} chat` : `Unlock ${room} chat`}>
-              {isLive ? 'Lock chat' : 'Unlock chat'}
+            <button onClick={handleStatusChange} className={`toggle-button ${chatIsLive ? 'lock-action' : 'unlock-action'}`} aria-label={chatIsLive ? `Lock ${room} chat` : `Unlock ${room} chat`}>
+              {chatIsLive ? 'Lock chat' : 'Unlock chat'}
             </button>
             <button onClick={purgeChat} className="purge-button">Purge Chat</button>
-          </div>}
+        </div>}
         <div className="chat-controls">
-        <label className="room-control" htmlFor="chat-room">Room<select id="chat-room" value={room} onChange={(event) => onRoomChange(event.target.value as ChatRoom)}>{CHAT_ROOMS.map((option) => <option key={option} value={option}>{option}</option>)}</select></label>
         <div className="profile-tools">
           <label htmlFor="nickname">Nickname</label>
           <input id="nickname" value={nicknameDraft} onChange={(e) => setNicknameDraft(e.target.value)} maxLength={24} />
@@ -139,10 +165,10 @@ export const PixelingsChat: React.FC<ChatProps> = ({
         </div>
       </div>
 
-      {!isLive && <div className="chat-status-banner" role="status">
+      {!chatIsLive && <div className="chat-status-banner" role="status">
         <span className="lock-symbol">⌁</span>
         <div><strong>Chat locked</strong><span>{lockState.reason || 'Posting is paused for this room.'}</span></div>
-        {isModerator && <button type="button" onClick={() => setShowLockDialog(true)}>Unlock</button>}
+        {isModerator && <button type="button" onClick={handleStatusChange}>Unlock</button>}
       </div>}
       {statusNotice && <p className="status-notice" role="status">{statusNotice}</p>}
 
@@ -179,12 +205,13 @@ export const PixelingsChat: React.FC<ChatProps> = ({
 
       {/* 3. Restricted Input Bar */}
       <div className="composer">
-        {!isLive ? (
+        {!canPost ? (
           <div className="locked-message">
             Chat is locked. Waiting for host to set status to LIVE.
           </div>
         ) : (
           <form onSubmit={handleSend}>
+            {!chatIsLive && <div className="staff-posting-note">Staff broadcast mode · members cannot post while this room is locked.</div>}
             <div className="whisper-row">
               <label htmlFor="whisperTarget">Whisper to:</label>
               <select
@@ -215,16 +242,7 @@ export const PixelingsChat: React.FC<ChatProps> = ({
         )}
       </div>
       </div>
-      {showLockDialog && <div className="dialog-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setShowLockDialog(false); }}>
-        <form className="lock-dialog" onSubmit={handleStatusChange} role="dialog" aria-modal="true" aria-labelledby="lock-dialog-title">
-          <div className="dialog-kicker">ROOM CONTROLS</div>
-          <h2 id="lock-dialog-title">{isLive ? `Lock ${room}?` : `Unlock ${room}?`}</h2>
-          <p>{isLive ? 'Members will be able to read the conversation, but nobody can send new messages until the room is unlocked.' : 'Members will be able to send messages as soon as this room goes live.'}</p>
-          {isLive && <label className="lock-reason-label" htmlFor="lock-reason">Reason shown to members <span>optional</span></label>}
-          {isLive && <textarea id="lock-reason" value={lockReasonDraft} onChange={(event) => setLockReasonDraft(event.target.value)} maxLength={120} rows={3} placeholder="Why is chat paused?" />}
-          <div className="dialog-actions"><button type="button" className="cancel-button" onClick={() => setShowLockDialog(false)}>Cancel</button><button type="submit" className={isLive ? 'confirm-lock-button' : 'confirm-unlock-button'}>{isLive ? 'Lock chat' : 'Unlock chat'}</button></div>
-        </form>
-      </div>}
+      </div>
     </>
   );
 };
