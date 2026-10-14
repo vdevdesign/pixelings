@@ -11,6 +11,8 @@ import { supabase } from '../lib/supabaseClient';
 import './styles.css';
 import './mobile.css';
 
+const logoSrc = `${import.meta.env.BASE_URL}pixels-tech-lab-logo.png`;
+
 function App() {
   const showInstantTest = import.meta.env.DEV && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
   const [loginType, setLoginType] = React.useState<'staff' | 'kid'>('kid');
@@ -183,7 +185,7 @@ function App() {
 
   if (resetMode) return <main className="app-shell login-shell">
     <section className="login-card">
-    <img className="brand-logo login-logo" src="/pixels-tech-lab-logo.png" alt="Pixels Tech Lab" />
+    <img className="brand-logo login-logo" src={logoSrc} alt="Pixels Tech Lab" />
     <h1 className="login-title">Reset <em>password</em></h1>
       <p className="hero-copy">Choose a new password for your teacher or moderator account.</p>
       <form onSubmit={saveNewPassword}>
@@ -199,7 +201,7 @@ function App() {
 
   if (!loggedIn) return <main className="app-shell login-shell">
     <section className="login-card">
-      <img className="brand-logo login-logo" src="/pixels-tech-lab-logo.png" alt="Pixels Tech Lab" />
+      <img className="brand-logo login-logo" src={logoSrc} alt="Pixels Tech Lab" />
       <h1 className="login-title">Pixelings <em>Chat</em></h1>
       <p className="hero-copy">Use your work email, or sign in to the classroom and choose your own Pixelings account.</p>
       {!kidEmailVerified && <div className="login-tabs" role="tablist" aria-label="Login type">
@@ -251,7 +253,7 @@ function App() {
     <main className={`app-shell ${activeTab === 'chat' ? 'chat-page-shell' : ''}`}>
       <nav className="site-nav" aria-label="Primary navigation">
         <button className="brand-mark" type="button" onClick={() => setActiveTab('home')} aria-label="Go to Pixels Tech Lab home">
-          <img src="/pixels-tech-lab-logo.png" alt="Pixels Tech Lab" />
+          <img src={logoSrc} alt="Pixels Tech Lab" />
         </button>
         <button className={`nav-tab ${activeTab === 'home' ? 'active' : ''}`} onClick={() => setActiveTab('home')}>Home</button>
         <button className={`nav-tab ${activeTab === 'chat' ? 'active' : ''}`} onClick={() => setActiveTab('chat')}>Chat</button>
