@@ -31,7 +31,8 @@ function pickQuestions() {
 }
 
 export function MiniTrivia({ userId, demoMode = false }: { userId: string; demoMode?: boolean }) {
-  const [questions, setQuestions] = React.useState<TriviaQuestion[]>(pickQuestions);
+  const [questions, setQuestions] = React.useState<TriviaQuestion[]>([]);
+  const [started, setStarted] = React.useState(false);
   const [questionIndex, setQuestionIndex] = React.useState(0);
   const [selectedIndex, setSelectedIndex] = React.useState<number | null>(null);
   const [timeLeft, setTimeLeft] = React.useState(SECONDS_PER_QUESTION);
@@ -61,25 +62,29 @@ export function MiniTrivia({ userId, demoMode = false }: { userId: string; demoM
   }, [award, finished, question, selectedIndex]);
 
   React.useEffect(() => {
-    if (selectedIndex !== null || finished) return;
+    if (!started || selectedIndex !== null || finished) return;
     const timer = window.setInterval(() => setTimeLeft((value) => {
       if (value <= 1) { window.clearInterval(timer); answer(null); return 0; }
       return value - 1;
     }), 1000);
     return () => window.clearInterval(timer);
-  }, [answer, finished, selectedIndex, questionIndex]);
+  }, [answer, finished, selectedIndex, questionIndex, started]);
+
+  const startQuiz = () => {
+    setQuestions(pickQuestions()); setQuestionIndex(0); setSelectedIndex(null); setTimeLeft(SECONDS_PER_QUESTION); setEarned(0); setFinished(false); setStarted(true); setStatus('Choose an answer before the stars run out.');
+  };
 
   const next = () => {
     if (questionIndex === questions.length - 1) { setFinished(true); setStatus(`Quiz complete! You earned ${earned} Stardust.`); return; }
     setQuestionIndex((value) => value + 1); setSelectedIndex(null); setTimeLeft(SECONDS_PER_QUESTION); setStatus('Choose an answer before the stars run out.');
   };
 
-  const restart = () => { setQuestions(pickQuestions()); setQuestionIndex(0); setSelectedIndex(null); setTimeLeft(SECONDS_PER_QUESTION); setEarned(0); setFinished(false); setStatus('Choose an answer before the stars run out.'); };
+  const restart = () => startQuiz();
 
   return <article className="trivia-card feature-card">
     <div className="card-kicker">STARDUST CHALLENGE</div>
-    <div className="trivia-heading"><h2>Mini <em>trivia</em></h2><span className="trivia-progress">{finished ? 'DONE' : `${questionIndex + 1} / ${questions.length}`}</span></div>
-    {finished ? <div className="trivia-complete"><p>{status}</p><button className="primary-action" onClick={restart}>Play again</button></div> : <>
+    <div className="trivia-heading"><h2>Mini <em>trivia</em></h2><span className="trivia-progress">{finished ? 'DONE' : started ? `${questionIndex + 1} / ${questions.length}` : 'READY'}</span></div>
+    {!started ? <div className="trivia-complete"><p>Test your skills across Blender, Tinkercad, animation, Roblox, and online safety.</p><button className="primary-action" onClick={startQuiz}>Start trivia</button></div> : finished ? <div className="trivia-complete"><p>{status}</p><button className="primary-action" onClick={restart}>Play again</button></div> : <>
       <div className="trivia-meta"><span>{question.category}</span><strong>00:{String(timeLeft).padStart(2, '0')}</strong></div>
       <p className="trivia-question">{question.question}</p>
       <div className="trivia-options">{question.options.map((option, index) => {

@@ -97,13 +97,20 @@ create table if not exists public.sessions (
   id uuid primary key default gen_random_uuid(),
   name text not null default 'Pixelings Lounge',
   status text not null default 'locked' check (status in ('live', 'locked')),
+  lock_reason text,
+  locked_at timestamptz,
+  locked_by uuid,
   created_at timestamptz not null default now()
 );
+alter table public.sessions add column if not exists lock_reason text;
+alter table public.sessions add column if not exists locked_at timestamptz;
+alter table public.sessions add column if not exists locked_by uuid;
 
 create table if not exists public.profiles (
   id uuid primary key references auth.users(id) on delete cascade,
-  username text not null unique check (username ~ '^Pixels([1-9]|1[0-9]|20)$'),
+  username text not null unique,
   role text not null default 'computer' check (role in ('computer', 'teacher', 'moderator')),
+  access_code_hash text,
   approved_nickname text check (approved_nickname is null or char_length(approved_nickname) between 1 and 24),
   pending_nickname text check (pending_nickname is null or char_length(pending_nickname) between 1 and 24),
   nickname_status text not null default 'none' check (nickname_status in ('none', 'pending', 'approved', 'rejected')),
@@ -138,12 +145,32 @@ alter table public.profiles add column if not exists approved_nickname text;
 alter table public.profiles add column if not exists pending_nickname text;
 alter table public.profiles add column if not exists nickname_status text not null default 'none';
 alter table public.profiles add column if not exists display_name text;
+alter table public.profiles add column if not exists access_code_hash text;
+alter table public.profiles drop constraint if exists profiles_username_check;
+
+-- Child accounts use a first-name username and a teacher-issued code. Store only
+-- a bcrypt hash; the shared classroom email is the front door, not a password.
+create or replace function public.verify_child_login(child_name text, child_code text)
+returns table (id uuid, username text, approved_nickname text)
+language plpgsql security definer set search_path = public
+as $$
+begin
+  return query
+    select p.id, p.username, p.approved_nickname
+    from public.profiles p
+    where p.role = 'computer'
+      and lower(p.username) = lower(trim(child_name))
+      and p.access_code_hash is not null
+      and crypt(child_code, p.access_code_hash) = p.access_code_hash;
+end;
+$$;
 
 create table if not exists public.messages (
   id uuid primary key default gen_random_uuid(),
   session_id uuid not null references public.sessions(id) on delete cascade,
   sender_id uuid not null,
   sender_name text not null check (char_length(sender_name) between 1 and 40),
+  sender_username text,
   content text not null check (char_length(content) between 1 and 1000),
   is_whisper boolean not null default false,
   recipient_id uuid,
@@ -164,6 +191,7 @@ create table if not exists public.message_reports (
   unique (message_id, reporter_id)
 );
 alter table public.messages add column if not exists reply_to_id uuid references public.messages(id) on delete set null;
+alter table public.messages add column if not exists sender_username text;
 
 alter table public.sessions enable row level security;
 alter table public.messages enable row level security;
@@ -239,7 +267,8 @@ create or replace function public.apply_approved_nickname()
 returns trigger language plpgsql security definer set search_path = public
 as $$
 begin
-  select coalesce(approved_nickname, username, new.sender_name) into new.sender_name
+  select coalesce(approved_nickname, username, new.sender_name), username
+    into new.sender_name, new.sender_username
   from public.profiles where id = new.sender_id;
   return new;
 end;
@@ -276,6 +305,15 @@ insert into public.sessions (name, status)
 select 'Pixelings Lounge', 'live'
 where not exists (select 1 from public.sessions where name = 'Pixelings Lounge');
 
+-- One live room per class. Messages remain isolated by session_id.
+insert into public.sessions (name, status)
+select room.name, 'live'
+from (values
+  ('Blender'), ('Tinkercad'), ('E-Sports'),
+  ('Minecraft Command Science'), ('Roblox Game Design')
+) as room(name)
+where not exists (select 1 from public.sessions existing where existing.name = room.name);
+
 insert into public.moderation_terms (term) values
   ('stupid'), ('idiot'), ('hate'), ('kill'), ('shut up'), ('crap'),
   ('fah'), ('fuck'), ('shit'), ('shid'), ('dumb'), ('asshole'),
@@ -284,7 +322,8 @@ insert into public.moderation_terms (term) values
   ('freaking'), ('frigging'), ('porn'), ('sexy'), ('naked')
 on conflict (term) do nothing;
 
--- Create 20 users in Authentication > Users with usernames Pixels1 ... Pixels20.
--- Use unique teacher-managed passwords, then insert their auth UUIDs here and
--- change the teacher/moderator roles only for trusted staff accounts:
--- insert into public.profiles (id, username, role) values ('AUTH-USER-UUID', 'Pixels1', 'computer');
+-- Child setup example (run with a real auth UUID):
+-- insert into public.profiles (id, username, role, access_code_hash)
+-- values ('AUTH-USER-UUID', 'Maya', 'computer', crypt('4829', gen_salt('bf')));
+-- Staff members sign in with their work email and are assigned teacher/moderator
+-- roles by their matching profiles/staff_directory record.
