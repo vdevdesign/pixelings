@@ -2,6 +2,7 @@ import React from 'react';
 import ReactDOM from 'react-dom/client';
 import { PixelingsChat } from '../components/PixelingsChat';
 import { StardustShop } from '../components/StardustShop';
+import { InventoryPage } from '../components/InventoryPage';
 import { MiniTrivia } from '../components/MiniTrivia';
 import { RuneDuelMatch } from '../components/RuneDuelMatch';
 import { MiniChat } from '../components/MiniChat';
@@ -37,7 +38,9 @@ function App() {
   const [newPassword, setNewPassword] = React.useState('');
   const [confirmPassword, setConfirmPassword] = React.useState('');
   const [resetNotice, setResetNotice] = React.useState('');
-  const [activeTab, setActiveTab] = React.useState<'home' | 'chat' | 'games' | 'shop'>('home');
+  const [activeTab, setActiveTab] = React.useState<'home' | 'chat' | 'games' | 'shop' | 'inventory'>('home');
+  // Equipped avatar cosmetics, mirrored from the profiles table for display.
+  const [equippedAvatar, setEquippedAvatar] = React.useState<{ avatarUrl: string | null; backgroundUrl: string | null }>({ avatarUrl: null, backgroundUrl: null });
   const [chatRoom, setChatRoom] = React.useState<ChatRoom>('Blender');
   const [allChatsLocked, setAllChatsLocked] = React.useState(false);
   const [chatLockNotice, setChatLockNotice] = React.useState('');
@@ -54,13 +57,14 @@ function App() {
       if (!session?.user) return;
       setAuthUserId(session.user.id);
       setUserId(session.user.id);
-      const { data: profile } = await supabase.from('profiles').select('username, role, approved_nickname').eq('id', session.user.id).single();
+      const { data: profile } = await supabase.from('profiles').select('username, role, approved_nickname, avatar_url, background_url').eq('id', session.user.id).single();
       if (profile) {
         setComputer(profile.username);
         setRole(profile.role);
         setIsTeacher(profile.role !== 'computer');
         setIsInstantPreview(false);
         setApprovedNickname(profile.approved_nickname || '');
+        setEquippedAvatar({ avatarUrl: profile.avatar_url || null, backgroundUrl: profile.background_url || null });
         setLoggedIn(true);
       }
     });
@@ -259,6 +263,7 @@ function App() {
         <button className={`nav-tab ${activeTab === 'chat' ? 'active' : ''}`} onClick={() => setActiveTab('chat')}>Chat</button>
         <button className={`nav-tab ${activeTab === 'games' ? 'active' : ''}`} onClick={() => setActiveTab('games')}>Mini Games</button>
         <button className={`nav-tab ${activeTab === 'shop' ? 'active' : ''}`} onClick={() => setActiveTab('shop')}>Stardust Shop</button>
+        <button className={`nav-tab ${activeTab === 'inventory' ? 'active' : ''}`} onClick={() => setActiveTab('inventory')}>My Inventory</button>
         {isTeacher && <button className={`global-chat-lock ${allChatsLocked ? 'global-chat-unlock' : ''}`} onClick={toggleAllChats} disabled={changingAllChats}>
           {changingAllChats ? 'Updating…' : allChatsLocked ? 'Unlock all chats' : 'Lock all chats'}
         </button>}
@@ -299,7 +304,7 @@ function App() {
             <p>We are planning new ways for Pixelings to spotlight projects, ideas, and creative experiments.</p>
           </article>
         </div></div>
-        <PtlPosts section="news" canEdit={role === 'teacher'} userId={userId} />
+        <PtlPosts section="news" canEdit={isTeacher} userId={userId} />
       </section>
       <section className="home-section tales-section">
         <div className="section-heading home-section-heading">
@@ -318,7 +323,7 @@ function App() {
             <p>Tales can feature a Pixelings project, a quick lesson learned, an interview, or a peek at how something in the lab came together.</p>
           </div>
         </div></div>
-        <PtlPosts section="tales" canEdit={role === 'teacher'} userId={userId} />
+        <PtlPosts section="tales" canEdit={isTeacher} userId={userId} />
       </section>
       </>
       : activeTab === 'chat' ? <>
@@ -333,9 +338,13 @@ function App() {
         <RuneDuelMatch />
         <MiniTrivia userId={userId} demoMode={isInstantPreview} />
       </>
+      : activeTab === 'inventory' ? <>
+        <section className="hero"><h1>My <em>Inventory</em></h1><p className="hero-copy">Profile pictures and backgrounds you own. Equip one of each to style your profile.</p></section>
+        <InventoryPage accountId={authUserId} demoMode={isInstantPreview} canManage={isTeacher} onProfileChange={setEquippedAvatar} />
+      </>
       : <>
         <section className="hero"><h1>Stardust <em>Shop</em></h1><p className="hero-copy">Spend your sparkle on chat upgrades, identity flexes, and delightful chaos.</p></section>
-        <StardustShop accountId={authUserId} demoMode={isInstantPreview} />
+        <StardustShop accountId={authUserId} demoMode={isInstantPreview} canManage={isTeacher} />
       </>}
       {activeTab !== 'chat' && <MiniChat room={chatRoom} onRoomChange={setChatRoom} userId={userId} username={approvedNickname || computer} demoMode={isInstantPreview} />}
     </main>

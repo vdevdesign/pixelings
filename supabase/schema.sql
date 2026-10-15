@@ -39,7 +39,49 @@ insert into public.stardust_shop (id, name, description, category, price, emoji,
  ('vip-title', 'VIP Chat Title', 'A tiny [VIP] tag to flex beside your name.', 'Identity', 250, '★', 3),
  ('pixel-stickers', 'Pixel Sticker Set', 'Exclusive stickers for big reactions in chat.', 'Chat', 150, '☻', 4),
  ('coin-vfx', 'Coin Collect VFX', 'Trigger a cheerful coin burst when you post.', 'Effects', 300, '✹', 5),
- ('cyber-style', 'Cyberpunk Chat Style', 'A dark neon skin for your chat messages.', 'Chat', 220, '⌁', 6)
+ ('cyber-style', 'Cyberpunk Chat Style', 'A dark neon skin for your chat messages.', 'Chat', 220, '⌁', 6),
+ -- Profile pictures (16) — each one is its own purchasable shop item.
+ ('profile-baby-dragon', 'Baby Dragon', 'A baby dragon profile picture for your Pixelings profile.', 'Identity', 120, '🐲', 10),
+ ('profile-bamboo-panda', 'Bamboo Panda', 'A bamboo panda profile picture for your Pixelings profile.', 'Identity', 120, '🐼', 11),
+ ('profile-blushy-ghost', 'Blushy Ghost', 'A blushy ghost profile picture for your Pixelings profile.', 'Identity', 120, '👻', 12),
+ ('profile-chomp-monster', 'Chomp Monster', 'A chomp monster profile picture for your Pixelings profile.', 'Identity', 120, '👾', 13),
+ ('profile-cotton-bunny', 'Cotton Bunny', 'A cotton bunny profile picture for your Pixelings profile.', 'Identity', 120, '🐰', 14),
+ ('profile-cyclops-jelly', 'Cyclops Jelly', 'A cyclops jelly profile picture for your Pixelings profile.', 'Identity', 120, '🪼', 15),
+ ('profile-deep-sea-octo', 'Deep Sea Octo', 'A deep sea octo profile picture for your Pixelings profile.', 'Identity', 120, '🐙', 16),
+ ('profile-fuzzy-horn-monster', 'Fuzzy Horn Monster', 'A fuzzy horn monster profile picture for your Pixelings profile.', 'Identity', 120, '🦕', 17),
+ ('profile-happy-slime', 'Happy Slime', 'A happy slime profile picture for your Pixelings profile.', 'Identity', 120, '🟢', 18),
+ ('profile-honey-bear', 'Honey Bear', 'A honey bear profile picture for your Pixelings profile.', 'Identity', 120, '🐻', 19),
+ ('profile-lily-pad-frog', 'Lily Pad Frog', 'A lily pad frog profile picture for your Pixelings profile.', 'Identity', 120, '🐸', 20),
+ ('profile-little-night-bat', 'Little Night Bat', 'A little night bat profile picture for your Pixelings profile.', 'Identity', 120, '🦇', 21),
+ ('profile-midnight-cat', 'Midnight Cat', 'A midnight cat profile picture for your Pixelings profile.', 'Identity', 120, '🐱', 22),
+ ('profile-moon-owl', 'Moon Owl', 'A moon owl profile picture for your Pixelings profile.', 'Identity', 120, '🦉', 23),
+ ('profile-moonlit-wolf', 'Moonlit Wolf', 'A moonlit wolf profile picture for your Pixelings profile.', 'Identity', 120, '🐺', 24),
+ ('profile-quiet-alien', 'Quiet Alien', 'A quiet alien profile picture for your Pixelings profile.', 'Identity', 120, '👽', 25),
+ ('profile-scarf-penguin', 'Scarf Penguin', 'A scarf penguin profile picture for your Pixelings profile.', 'Identity', 120, '🐧', 26),
+ ('profile-sleepy-fox', 'Sleepy Fox', 'A sleepy fox profile picture for your Pixelings profile.', 'Identity', 120, '🦊', 27),
+ ('profile-smiley-axolotl', 'Smiley Axolotl', 'A smiley axolotl profile picture for your Pixelings profile.', 'Identity', 120, '🐠', 28),
+ ('profile-toadstool-sprite', 'Toadstool Sprite', 'A toadstool sprite profile picture for your Pixelings profile.', 'Identity', 120, '🍄', 29),
+ -- Profile backgrounds (16) — each one is its own purchasable shop item.
+ ('background-baby-dragon', 'Baby Dragon Scene', 'A baby dragon background for your Pixelings profile.', 'Identity', 150, '🐲', 30),
+ ('background-bamboo-panda', 'Bamboo Panda Scene', 'A bamboo panda background for your Pixelings profile.', 'Identity', 150, '🐼', 31),
+ ('background-blushy-ghost', 'Blushy Ghost Scene', 'A blushy ghost background for your Pixelings profile.', 'Identity', 150, '👻', 32),
+ ('background-chomp-monster', 'Chomp Monster Scene', 'A chomp monster background for your Pixelings profile.', 'Identity', 150, '👾', 33),
+ ('background-cotton-bunny', 'Cotton Bunny Scene', 'A cotton bunny background for your Pixelings profile.', 'Identity', 150, '🐰', 34),
+ ('background-cyclops-jelly', 'Cyclops Jelly Scene', 'A cyclops jelly background for your Pixelings profile.', 'Identity', 150, '🪼', 35),
+ ('background-deep-sea-octo', 'Deep Sea Octo Scene', 'A deep sea octo background for your Pixelings profile.', 'Identity', 150, '🐙', 36),
+ ('background-fuzzy-horn-monster', 'Fuzzy Horn Monster Scene', 'A fuzzy horn monster background for your Pixelings profile.', 'Identity', 150, '🦕', 37),
+ ('background-happy-slime', 'Happy Slime Scene', 'A happy slime background for your Pixelings profile.', 'Identity', 150, '🟢', 38),
+ ('background-honey-bear', 'Honey Bear Scene', 'A honey bear background for your Pixelings profile.', 'Identity', 150, '🐻', 39),
+ ('background-lily-pad-frog', 'Lily Pad Frog Scene', 'A lily pad frog background for your Pixelings profile.', 'Identity', 150, '🐸', 40),
+ ('background-little-night-bat', 'Little Night Bat Scene', 'A little night bat background for your Pixelings profile.', 'Identity', 150, '🦇', 41),
+ ('background-midnight-cat', 'Midnight Cat Scene', 'A midnight cat background for your Pixelings profile.', 'Identity', 150, '🐱', 42),
+ ('background-moon-owl', 'Moon Owl Scene', 'A moon owl background for your Pixelings profile.', 'Identity', 150, '🦉', 43),
+ ('background-moonlit-wolf', 'Moonlit Wolf Scene', 'A moonlit wolf background for your Pixelings profile.', 'Identity', 150, '🐺', 44),
+ ('background-quiet-alien', 'Quiet Alien Scene', 'A quiet alien background for your Pixelings profile.', 'Identity', 150, '👽', 45),
+ ('background-scarf-penguin', 'Scarf Penguin Scene', 'A scarf penguin background for your Pixelings profile.', 'Identity', 150, '🐧', 46),
+ ('background-sleepy-fox', 'Sleepy Fox Scene', 'A sleepy fox background for your Pixelings profile.', 'Identity', 150, '🦊', 47),
+ ('background-smiley-axolotl', 'Smiley Axolotl Scene', 'A smiley axolotl background for your Pixelings profile.', 'Identity', 150, '🐠', 48),
+ ('background-toadstool-sprite', 'Toadstool Sprite Scene', 'A toadstool sprite background for your Pixelings profile.', 'Identity', 150, '🍄', 49)
 on conflict (id) do update set name = excluded.name, description = excluded.description, category = excluded.category, price = excluded.price, emoji = excluded.emoji, sort_order = excluded.sort_order;
 
 alter table public.stardust_shop enable row level security;
@@ -114,6 +156,9 @@ create table if not exists public.profiles (
   approved_nickname text check (approved_nickname is null or char_length(approved_nickname) between 1 and 24),
   pending_nickname text check (pending_nickname is null or char_length(pending_nickname) between 1 and 24),
   nickname_status text not null default 'none' check (nickname_status in ('none', 'pending', 'approved', 'rejected')),
+  -- Equipped cosmetics: ids from stardust_inventory (profile-* / background-*).
+  avatar_url text,
+  background_url text,
   created_at timestamptz not null default now()
 );
 
@@ -202,6 +247,14 @@ alter table public.message_reports enable row level security;
 create or replace function public.is_moderator()
 returns boolean language sql stable security definer set search_path = public
 as $$ select exists (select 1 from public.profiles where id = auth.uid() and role in ('teacher', 'moderator')); $$;
+
+-- Shop visibility management: staff see hidden items and can toggle public/hidden.
+drop policy if exists "Anyone can view shop items" on public.stardust_shop;
+create policy "Anyone can view shop items" on public.stardust_shop for select
+  using (active = true or public.is_moderator());
+drop policy if exists "Moderators can manage shop items" on public.stardust_shop;
+create policy "Moderators can manage shop items" on public.stardust_shop for update
+  to authenticated using (public.is_moderator()) with check (public.is_moderator());
 
 drop policy if exists "Anyone can view sessions" on public.sessions;
 create policy "Anyone can view sessions" on public.sessions for select using (true);
@@ -330,3 +383,65 @@ on conflict (term) do nothing;
 -- values ('AUTH-USER-UUID', 'Maya', 'computer', crypt('4829', gen_salt('bf')));
 -- Staff members sign in with their work email and are assigned teacher/moderator
 -- roles by their matching profiles/staff_directory record.
+
+-- ============================================================
+-- Profile avatar cosmetics (profile pictures & backgrounds)
+-- Run the statements below in the Supabase SQL Editor.
+-- ============================================================
+
+-- 1) Add equip columns to profiles (skip if re-running schema.sql which now includes them).
+alter table public.profiles add column if not exists avatar_url text;
+alter table public.profiles add column if not exists background_url text;
+
+-- 2) Register every profile picture / background as its own shop item.
+--    The schema.sql insert above already contains them; this upsert is a
+--    safety net for databases created before this feature.
+insert into public.stardust_shop (id, name, description, category, price, emoji, sort_order)
+select
+  'profile-' || critter,
+  replace(initcap(replace(critter, '-', ' ')), '_', ' '),
+  'A ' || replace(critter, '-', ' ') || ' profile picture for your Pixelings profile.',
+  'Identity', 120, '✦', 100 + row_number() over ()
+from unnest(array[
+  'baby-dragon','bamboo-panda','blushy-ghost','chomp-monster','cotton-bunny','cyclops-jelly',
+  'deep-sea-octo','fuzzy-horn-monster','happy-slime','honey-bear','lily-pad-frog',
+  'little-night-bat','midnight-cat','moon-owl','moonlit-wolf','quiet-alien','scarf-penguin',
+  'sleepy-fox','smiley-axolotl','toadstool-sprite'
+]) as critter
+on conflict (id) do nothing;
+
+insert into public.stardust_shop (id, name, description, category, price, emoji, sort_order)
+select
+  'background-' || critter,
+  replace(initcap(replace(critter, '-', ' ')), '_', ' ') || ' Scene',
+  'A ' || replace(critter, '-', ' ') || ' background for your Pixelings profile.',
+  'Identity', 150, '✦', 200 + row_number() over ()
+from unnest(array[
+  'baby-dragon','bamboo-panda','blushy-ghost','chomp-monster','cotton-bunny','cyclops-jelly',
+  'deep-sea-octo','fuzzy-horn-monster','happy-slime','honey-bear','lily-pad-frog',
+  'little-night-bat','midnight-cat','moon-owl','moonlit-wolf','quiet-alien','scarf-penguin',
+  'sleepy-fox','smiley-axolotl','toadstool-sprite'
+]) as critter
+on conflict (id) do nothing;
+
+-- 3) Allow users to equip cosmetics they own. Only 'profile-*' / 'background-*'
+--    ids from the user's own stardust_inventory may be written to those columns.
+create or replace function public.can_equip_cosmetic(target text)
+returns boolean language sql stable security definer set search_path = public
+as $$
+  select target is null
+    or (target like 'profile-%' or target like 'background-%')
+       and exists (
+         select 1 from public.stardust_inventory
+         where user_id = auth.uid() and item_id = target
+       );
+$$;
+
+drop policy if exists "Users can equip their own cosmetics" on public.profiles;
+create policy "Users can equip their own cosmetics" on public.profiles for update to authenticated
+using (id = auth.uid())
+with check (
+  id = auth.uid()
+  and public.can_equip_cosmetic(avatar_url)
+  and public.can_equip_cosmetic(background_url)
+);
