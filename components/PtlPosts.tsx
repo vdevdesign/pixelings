@@ -19,6 +19,7 @@ interface PtlPostsProps {
 }
 
 const emptyDraft = { title: '', body: '', image_alt: '' };
+const maxImageBytes = 10 * 1024 * 1024;
 
 export function PtlPosts({ section, canEdit, userId }: PtlPostsProps) {
   const [posts, setPosts] = React.useState<PtlPost[]>([]);
@@ -26,6 +27,7 @@ export function PtlPosts({ section, canEdit, userId }: PtlPostsProps) {
   const [notice, setNotice] = React.useState('');
   const [editingId, setEditingId] = React.useState<string | null>(null);
   const [draft, setDraft] = React.useState(emptyDraft);
+  const [selectedImage, setSelectedImage] = React.useState<File | null>(null);
   const [saving, setSaving] = React.useState(false);
 
   const imageUrl = (path: string | null) => path
@@ -46,6 +48,7 @@ export function PtlPosts({ section, canEdit, userId }: PtlPostsProps) {
     setNotice('');
     setEditingId(post?.id || 'new');
     setDraft(post ? { title: post.title, body: post.body, image_alt: post.image_alt || '' } : emptyDraft);
+    setSelectedImage(null);
   };
 
   const savePost = async (event: React.FormEvent<HTMLFormElement>) => {
@@ -58,12 +61,21 @@ export function PtlPosts({ section, canEdit, userId }: PtlPostsProps) {
       ? await supabase.from('ptl_posts').insert({ ...values, created_by: userId }).select().single()
       : await supabase.from('ptl_posts').update(values).eq('id', editingId).select().single();
     if (result.error) setNotice(result.error.message);
-    else { setEditingId(null); setDraft(emptyDraft); await loadPosts(); }
+    else {
+      const savedPost = result.data as PtlPost;
+      if (selectedImage) await uploadImage(savedPost, selectedImage);
+      setEditingId(null);
+      setDraft(emptyDraft);
+      setSelectedImage(null);
+      await loadPosts();
+    }
     setSaving(false);
   };
 
   const uploadImage = async (post: PtlPost, file: File) => {
     setNotice('');
+    if (!file.type.startsWith('image/')) { setNotice('Please choose an image file.'); return; }
+    if (file.size > maxImageBytes) { setNotice('Photos must be 10 MB or smaller.'); return; }
     const safeName = file.name.toLowerCase().replace(/[^a-z0-9._-]+/g, '-');
     const path = `${userId}/${post.id}/${crypto.randomUUID()}-${safeName}`;
     const { error: uploadError } = await supabase.storage.from('ptl-post-images').upload(path, file, { upsert: false });
@@ -72,7 +84,10 @@ export function PtlPosts({ section, canEdit, userId }: PtlPostsProps) {
     if (error) {
       await supabase.storage.from('ptl-post-images').remove([path]);
       setNotice(error.message);
-    } else await loadPosts();
+    } else {
+      if (post.image_path) await supabase.storage.from('ptl-post-images').remove([post.image_path]);
+      await loadPosts();
+    }
   };
 
   const removeImage = async (post: PtlPost) => {
@@ -98,6 +113,18 @@ export function PtlPosts({ section, canEdit, userId }: PtlPostsProps) {
     {editingId && <form className="ptl-editor" onSubmit={savePost}>
       <label>Title<input value={draft.title} maxLength={140} onChange={(event) => setDraft({ ...draft, title: event.target.value })} /></label>
       <label>Post text<textarea value={draft.body} maxLength={5000} rows={4} onChange={(event) => setDraft({ ...draft, body: event.target.value })} /></label>
+      <label>Photo <span>(optional, JPG/PNG/WebP/GIF up to 10 MB)</span><input type="file" accept="image/jpeg,image/png,image/webp,image/gif" onChange={(event) => {
+        const file = event.target.files?.[0] || null;
+        if (file && (!file.type.startsWith('image/') || file.size > maxImageBytes)) {
+          setNotice('Photos must be 10 MB or smaller.');
+          event.currentTarget.value = '';
+          setSelectedImage(null);
+          return;
+        }
+        setNotice('');
+        setSelectedImage(file);
+      }} /></label>
+      {selectedImage && <p className="ptl-selected-image">Selected photo: {selectedImage.name}</p>}
       <label>Image description <span>(optional)</span><input value={draft.image_alt} maxLength={200} onChange={(event) => setDraft({ ...draft, image_alt: event.target.value })} /></label>
       <div className="ptl-editor-actions"><button className="primary-action" disabled={saving}>{saving ? 'Saving…' : 'Save post'}</button><button className="text-action" type="button" onClick={() => setEditingId(null)}>Cancel</button></div>
     </form>}

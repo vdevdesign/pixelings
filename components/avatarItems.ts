@@ -1,13 +1,13 @@
 // Pixelings profile pictures & backgrounds, bundled from src/assets.
 // Images are imported eagerly so Vite fingerprints and ships them with the build.
-const profileImages = import.meta.glob<{ default: string }>(
-  '../assets/pixelings-profiles/*.png',
-  { eager: true },
-);
-const backgroundImages = import.meta.glob<{ default: string }>(
-  '../assets/pixelings-backgrounds/*.png',
-  { eager: true },
-);
+// NOTE: no TypeScript generic on import.meta.glob — Vite's glob transform
+// cannot parse a type argument and would silently return an empty module map.
+const profileImages = import.meta.glob('../assets/pixelings-profiles/*.png', {
+  eager: true,
+}) as Record<string, { default: string }>;
+const backgroundImages = import.meta.glob('../assets/pixelings-backgrounds/*.png', {
+  eager: true,
+}) as Record<string, { default: string }>;
 
 export type AvatarItem = {
   id: string;
