@@ -1,10 +1,22 @@
 import React from 'react';
 import { supabase } from '../lib/supabaseClient';
-import { avatarItemById, type AvatarItem } from './avatarItems';
+import { avatarItemById, avatarItems, type AvatarItem } from './avatarItems';
 
 type ShopItem = { id: string; name: string; description: string; category: string; price: number; emoji: string; active?: boolean };
+// Profile pictures & backgrounds ship with the app (bundled from src/assets),
+// so they are always available as individual purchasable items.
+const avatarShopItems: ShopItem[] = avatarItems.map((item: AvatarItem) => ({
+  id: item.id,
+  name: item.name,
+  description: item.kind === 'profile'
+    ? `${item.name} profile picture for your Pixelings profile.`
+    : `${item.name} background for your Pixelings profile.`,
+  category: 'Identity',
+  price: item.price,
+  emoji: item.kind === 'profile' ? '🖼' : '🌌',
+}));
 const fallbackItems: ShopItem[] = [
-  { id: 'avatar-pack', name: 'Pixel Avatar Pack', description: 'Retro faces and character frames for your profile.', category: 'Identity', price: 120, emoji: '✦' },
+  ...avatarShopItems,
   { id: 'neon-glow', name: 'Neon Username Glow', description: 'Give your chat name a soft electric aura.', category: 'Identity', price: 180, emoji: '◈' },
   { id: 'vip-title', name: 'VIP Chat Title', description: 'A tiny [VIP] tag to flex beside your name.', category: 'Identity', price: 250, emoji: '★' },
   { id: 'pixel-stickers', name: 'Pixel Sticker Set', description: 'Exclusive stickers for big reactions in chat.', category: 'Chat', price: 150, emoji: '☻' },
@@ -23,7 +35,14 @@ export function StardustShop({ accountId, demoMode, canManage }: { accountId: st
   React.useEffect(() => {
     if (demoMode) { setBalance(50000); return; }
     supabase.from('stardust_shop').select('id,name,description,category,price,emoji,active').order('sort_order')
-      .then(({ data }) => { if (data?.length) setItems(data as ShopItem[]); });
+      .then(({ data }) => {
+        if (!data?.length) return;
+        // Merge DB rows with the bundled avatar items so profile pictures and
+        // backgrounds always appear even if the DB seed is missing them.
+        const dbIds = new Set(data.map((row) => row.id));
+        const merged = [...(data as ShopItem[]), ...avatarShopItems.filter((item) => !dbIds.has(item.id))];
+        setItems(merged);
+      });
     // Inventory belongs to the authenticated account, not the selected child
     // profile (which is only a chat identity).
     if (accountId) supabase.from('stardust_wallets').select('balance').eq('user_id', accountId).single().then(({ data }) => { if (data) setBalance(data.balance); });

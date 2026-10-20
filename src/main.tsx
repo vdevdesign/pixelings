@@ -46,28 +46,59 @@ function App() {
   const [chatLockNotice, setChatLockNotice] = React.useState('');
   const [changingAllChats, setChangingAllChats] = React.useState(false);
   const [manualChatOverrides, setManualChatOverrides] = React.useState<Record<string, boolean>>({});
+  const kidLoginInProgress = React.useRef(false);
+
+  const loadAuthenticatedUser = async (session: { user: { id: string } } | null) => {
+    if (!session?.user || kidLoginInProgress.current) return;
+    setAuthUserId(session.user.id);
+    setUserId(session.user.id);
+    const { data: profile, error } = await supabase.from('profiles').select('username, role, approved_nickname, avatar_url, background_url').eq('id', session.user.id).single();
+    if (error || !profile) {
+      setLoginError('This teacher or moderator account is not provisioned yet. Run supabase/staff_profiles.sql in the Supabase SQL Editor, then try again.');
+      return;
+    }
+    setComputer(profile.username);
+    setRole(profile.role);
+    setIsTeacher(profile.role !== 'computer');
+    setIsInstantPreview(false);
+    setApprovedNickname(profile.approved_nickname || '');
+    setEquippedAvatar({ avatarUrl: profile.avatar_url || null, backgroundUrl: profile.background_url || null });
+    setLoggedIn(true);
+  };
 
   React.useEffect(() => {
-    const { data: authListener } = supabase.auth.onAuthStateChange(async (event, session) => {
+    const { data: authListener } = supabase.auth.onAuthStateChange((event, session) => {
       if (event === 'PASSWORD_RECOVERY') {
         setResetMode(true);
         setLoggedIn(false);
         return;
       }
-      if (!session?.user) return;
-      setAuthUserId(session.user.id);
-      setUserId(session.user.id);
-      const { data: profile } = await supabase.from('profiles').select('username, role, approved_nickname, avatar_url, background_url').eq('id', session.user.id).single();
-      if (profile) {
-        setComputer(profile.username);
-        setRole(profile.role);
-        setIsTeacher(profile.role !== 'computer');
+      if (event === 'SIGNED_OUT') {
+        kidLoginInProgress.current = false;
+        setLoggedIn(false);
+        setAuthUserId('');
+        setUserId('');
+        setComputer('');
+        setRole('computer');
+        setIsTeacher(false);
         setIsInstantPreview(false);
-        setApprovedNickname(profile.approved_nickname || '');
-        setEquippedAvatar({ avatarUrl: profile.avatar_url || null, backgroundUrl: profile.background_url || null });
-        setLoggedIn(true);
+        setApprovedNickname('');
+        setEquippedAvatar({ avatarUrl: null, backgroundUrl: null });
+        setEmailPassword('');
+        setKidEmailVerified(false);
+        setFirstName('');
+        setAccessCode('');
+        setActiveTab('home');
+        return;
       }
+      if (!session?.user) return;
+      // Kids authenticate the shared classroom account first, then select
+      // their individual profile with a name and access code. Do not let the
+      // classroom session skip that second step.
+      if (kidLoginInProgress.current) return;
+      void loadAuthenticatedUser(session);
     });
+    void supabase.auth.getSession().then(({ data }) => loadAuthenticatedUser(data.session));
     return () => authListener.subscription.unsubscribe();
   }, []);
 
@@ -78,6 +109,7 @@ function App() {
       return;
     }
     if (loginType === 'staff') {
+      kidLoginInProgress.current = false;
       const { data, error } = await supabase.auth.signInWithPassword({
         email: email.trim().toLowerCase(),
         password: emailPassword,
@@ -87,11 +119,12 @@ function App() {
       return;
     }
     if (!kidEmailVerified) {
+      kidLoginInProgress.current = true;
       const { data: classroom, error: classroomError } = await supabase.auth.signInWithPassword({
         email: email.trim().toLowerCase(),
         password: emailPassword,
       });
-      if (classroomError || !classroom.user) { setLoginError('That classroom email or password was not recognized.'); return; }
+      if (classroomError || !classroom.user) { kidLoginInProgress.current = false; setLoginError('That classroom email or password was not recognized.'); return; }
       setKidEmailVerified(true);
       return;
     }
@@ -156,6 +189,11 @@ function App() {
 
   const requestPasswordReset = async () => {
     setLoginError('');
+    setResetNotice('');
+    if (!email.trim() || !email.includes('@')) {
+      setLoginError('Enter your work email first, then choose reset password.');
+      return;
+    }
     const { error } = await supabase.auth.resetPasswordForEmail(email.trim().toLowerCase(), { redirectTo: window.location.origin });
     if (error) { setLoginError('We could not send the password reset email.'); return; }
     setResetNotice('Password reset link sent. Check your email.');
@@ -172,6 +210,32 @@ function App() {
     setNewPassword('');
     setConfirmPassword('');
     setResetNotice('Password updated. You can sign in now.');
+  };
+
+  const handleLogout = async () => {
+    setLoginError('');
+    kidLoginInProgress.current = false;
+    if (!isInstantPreview) {
+      const { error } = await supabase.auth.signOut();
+      if (error) {
+        setLoginError('We could not log you out. Please try again.');
+        return;
+      }
+    }
+    setLoggedIn(false);
+    setAuthUserId('');
+    setUserId('');
+    setComputer('');
+    setRole('computer');
+    setIsTeacher(false);
+    setIsInstantPreview(false);
+    setApprovedNickname('');
+    setEquippedAvatar({ avatarUrl: null, backgroundUrl: null });
+    setEmailPassword('');
+    setKidEmailVerified(false);
+    setFirstName('');
+    setAccessCode('');
+    setActiveTab('home');
   };
 
   // TEST-ONLY: remove this handler and the matching button below before launch.
@@ -233,8 +297,9 @@ function App() {
         </div>
       </>}
       {loginError && <p className="login-error">{loginError}</p>}
+      {resetNotice && <p className="login-help" role="status">{resetNotice}</p>}
       <button className="login-button" disabled={kidEmailVerified ? !firstName || accessCode.length < 4 : !email || !emailPassword} onClick={handleLogin}>{kidEmailVerified ? 'Verify account' : (loginType === 'kid' ? 'Continue' : 'Sign in')}</button>
-      {loginType === 'staff' && failedStaffAttempts > 0 && <button type="button" className="reset-link-button" onClick={requestPasswordReset}>Forgot password?</button>}
+      {loginType === 'staff' && <button type="button" className="reset-link-button" disabled={!email.trim() || !email.includes('@')} onClick={requestPasswordReset}>Reset password</button>}
       {/* TEST-ONLY: remove this button before launch. */}
       {showInstantTest && <button type="button" className="instant-test-button" onClick={handleInstantTestAccess}>⚡ Instant access (testing only)</button>}
       {showInstantTest && <div className="instant-test-panel">
@@ -268,6 +333,7 @@ function App() {
           {changingAllChats ? 'Updating…' : allChatsLocked ? 'Unlock all chats' : 'Lock all chats'}
         </button>}
         <span className="nav-account">{approvedNickname || computer}</span>
+        <button className="logout-button" type="button" onClick={handleLogout}>Log out</button>
       </nav>
       {chatLockNotice && <p className="global-chat-notice" role="status">{chatLockNotice}</p>}
       {activeTab === 'home' ? <>
@@ -304,7 +370,7 @@ function App() {
             <p>We are planning new ways for Pixelings to spotlight projects, ideas, and creative experiments.</p>
           </article>
         </div></div>
-        <PtlPosts section="news" canEdit={isTeacher} userId={userId} />
+        <PtlPosts section="news" canEdit={isTeacher && Boolean(authUserId)} userId={authUserId} />
       </section>
       <section className="home-section tales-section">
         <div className="section-heading home-section-heading">
@@ -323,7 +389,7 @@ function App() {
             <p>Tales can feature a Pixelings project, a quick lesson learned, an interview, or a peek at how something in the lab came together.</p>
           </div>
         </div></div>
-        <PtlPosts section="tales" canEdit={isTeacher} userId={userId} />
+        <PtlPosts section="tales" canEdit={isTeacher && Boolean(authUserId)} userId={authUserId} />
       </section>
       </>
       : activeTab === 'chat' ? <>

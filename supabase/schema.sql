@@ -34,8 +34,7 @@ create table if not exists public.stardust_inventory (
   primary key (user_id, item_id)
 );
 insert into public.stardust_shop (id, name, description, category, price, emoji, sort_order) values
- ('avatar-pack', 'Pixel Avatar Pack', 'Retro faces and character frames for your profile.', 'Identity', 120, '✦', 1),
- ('neon-glow', 'Neon Username Glow', 'Give your chat name a soft electric aura.', 'Identity', 180, '◈', 2),
+  ('neon-glow', 'Neon Username Glow', 'Give your chat name a soft electric aura.', 'Identity', 180, '◈', 2),
  ('vip-title', 'VIP Chat Title', 'A tiny [VIP] tag to flex beside your name.', 'Identity', 250, '★', 3),
  ('pixel-stickers', 'Pixel Sticker Set', 'Exclusive stickers for big reactions in chat.', 'Chat', 150, '☻', 4),
  ('coin-vfx', 'Coin Collect VFX', 'Trigger a cheerful coin burst when you post.', 'Effects', 300, '✹', 5),
@@ -388,6 +387,11 @@ on conflict (term) do nothing;
 -- Profile avatar cosmetics (profile pictures & backgrounds)
 -- Run the statements below in the Supabase SQL Editor.
 -- ============================================================
+
+-- 0) Retire the old bundle item. Existing owners keep it in their inventory,
+--    but it disappears from the shop.
+update public.stardust_shop set active = false where id = 'avatar-pack';
+delete from public.stardust_shop where id = 'avatar-pack';
 
 -- 1) Add equip columns to profiles (skip if re-running schema.sql which now includes them).
 alter table public.profiles add column if not exists avatar_url text;

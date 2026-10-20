@@ -302,6 +302,8 @@ body {
 .nav-tab.active { border-color: #16899a; color: var(--ptl-yellow); background: #10303a; box-shadow: inset 0 0 16px #00f5ff10; }
 .nav-tab:hover { color: var(--ptl-cyan-soft); border-color: #1c5262; }
 .nav-account { color: #71929b; }
+.logout-button { padding: 8px 11px; border: 1px solid #6b3e45; border-radius: 8px; color: #ffb1aa; background: transparent; cursor: pointer; font: 11px 'DM Mono', monospace; }
+.logout-button:hover { border-color: #ff8178; color: #fff0ed; background: #3a2024; }
 .hero .eyebrow, .eyebrow { color: var(--ptl-cyan-soft); }
 .eyebrow-dot { background: var(--ptl-cyan); box-shadow: 0 0 14px var(--ptl-cyan); }
 h1 em, .feature-card h2 em, .section-heading h2 em { color: var(--ptl-cyan); text-shadow: 0 0 22px #00f5ff33; }
