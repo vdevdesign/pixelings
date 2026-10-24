@@ -6,13 +6,29 @@ create table if not exists public.stardust_shop (
   id text primary key,
   name text not null,
   description text not null,
-  category text not null check (category in ('Identity', 'Chat', 'Effects')),
+  category text not null check (category in ('Identity', 'Chat', 'Effects', 'Tags')),
+  theme text not null default 'fun' check (theme in ('class', 'fun')),
   price integer not null check (price > 0),
   emoji text not null default '✦',
   active boolean not null default true,
   sort_order integer not null default 0,
   created_at timestamptz not null default now()
 );
+-- Older databases may have the two-value category check and no theme column.
+alter table public.stardust_shop drop constraint if exists stardust_shop_category_check;
+alter table public.stardust_shop add constraint stardust_shop_category_check
+  check (category in ('Identity', 'Chat', 'Effects', 'Tags'));
+alter table public.stardust_shop add column if not exists theme text not null default 'fun';
+alter table public.stardust_shop drop constraint if exists stardust_shop_theme_check;
+alter table public.stardust_shop add constraint stardust_shop_theme_check check (theme in ('class', 'fun'));
+
+-- Class vs. fun theming for every existing item. Class items tie to the
+-- workshops (Blender, Roblox, etc.); everything else is just-for-fun.
+update public.stardust_shop set theme = 'fun';
+
+-- Retire the generic VIP title (kept as an inactive row: inventory rows
+-- reference it via foreign key, so the shop row cannot be hard-deleted).
+update public.stardust_shop set active = false where id = 'vip-title';
 create table if not exists public.stardust_wallets (
   user_id uuid primary key references auth.users(id) on delete cascade,
   balance integer not null default 650 check (balance >= 0),
@@ -36,6 +52,20 @@ create table if not exists public.stardust_inventory (
 insert into public.stardust_shop (id, name, description, category, price, emoji, sort_order) values
   ('neon-glow', 'Neon Username Glow', 'Give your chat name a soft electric aura.', 'Identity', 180, '◈', 2),
  ('vip-title', 'VIP Chat Title', 'A tiny [VIP] tag to flex beside your name.', 'Identity', 250, '★', 3),
+
+ -- Wearable chat titles. Each is its own item so players can collect and show them off.
+ ('tag-pixel-coin-collector', 'Pixel Coin Collector', 'Earned by hoarding every last pixel coin on the arcade floor.', 'Tags', 100, '🪙', 60),
+ ('tag-stardust-acquirer', 'Stardust Acquirer', 'A cosmic traveler who has gathered glowing remnants from across the server.', 'Tags', 100, '🌠', 61),
+ ('tag-chill-guy', 'Chill Guy', 'Never stressed, always vibing in the chat room no matter what happens.', 'Tags', 80, '😎', 62),
+ ('tag-chill-gal', 'Chill Gal', 'Cool, calm, and collected, floating effortlessly through the chaos.', 'Tags', 80, '✌️', 63),
+ ('tag-speed-runner', 'Speed Runner', 'Always blazing past objectives and finishing minigames in record time.', 'Tags', 120, '⚡', 64),
+ ('tag-gale-snuffer', 'Gale Snuffer', 'Master of winds who can instantly blow out competing flames.', 'Tags', 150, '🌪️', 65),
+ ('tag-flame-keeper', 'Flame Keeper', 'Wields scorching fire capable of banishing shadows into the dark.', 'Tags', 150, '🔥', 66),
+ ('tag-shadow-walker', 'Shadow Walker', 'Mysterious operative who can hollow out the hardest stone.', 'Tags', 150, '🌑', 67),
+ ('tag-stone-warden', 'Stone Warden', 'Immovable guardian whose massive weight grounds fast-moving gales.', 'Tags', 150, '🗿', 68),
+ ('tag-mesh-master', 'Mesh Master', 'A 3D wizard who bends vertices and shapes polygons like clay in Blender.', 'Tags', 200, '🧊', 69),
+ ('tag-script-wizard', 'Script Wizard', 'Master of logic who writes clean code to bring games to life in Roblox Studio.', 'Tags', 200, '🧙', 70),
+ ('tag-glitch-hunter', 'Glitch Hunter', 'An elite bug exterminator who tracks down code errors before they crash the server.', 'Tags', 200, '🐛', 71),
  ('pixel-stickers', 'Pixel Sticker Set', 'Exclusive stickers for big reactions in chat.', 'Chat', 150, '☻', 4),
  ('coin-vfx', 'Coin Collect VFX', 'Trigger a cheerful coin burst when you post.', 'Effects', 300, '✹', 5),
  ('cyber-style', 'Cyberpunk Chat Style', 'A dark neon skin for your chat messages.', 'Chat', 220, '⌁', 6),
@@ -83,6 +113,12 @@ insert into public.stardust_shop (id, name, description, category, price, emoji,
  ('background-toadstool-sprite', 'Toadstool Sprite Scene', 'A toadstool sprite background for your Pixelings profile.', 'Identity', 150, '🍄', 49)
 on conflict (id) do update set name = excluded.name, description = excluded.description, category = excluded.category, price = excluded.price, emoji = excluded.emoji, sort_order = excluded.sort_order;
 
+-- Theme assignments: workshop-skills and duel-creator tags are 'class',
+-- everything else stays 'fun'.
+update public.stardust_shop set theme = 'class' where id in (
+  'tag-mesh-master', 'tag-script-wizard', 'tag-glitch-hunter'
+);
+
 alter table public.stardust_shop enable row level security;
 alter table public.stardust_wallets enable row level security;
 alter table public.stardust_purchases enable row level security;
@@ -113,6 +149,27 @@ begin
   insert into public.stardust_inventory (user_id, item_id) values (auth.uid(), item);
   insert into public.stardust_purchases (user_id, item_id, price_paid) values (auth.uid(), item, item_price);
   return remaining;
+end;
+$$;
+
+-- Staff claim items for free: same inventory record as a paid purchase, but the
+-- wallet is never charged. Only teachers/moderators may call it.
+create or replace function public.claim_stardust_item(item text)
+returns integer language plpgsql security definer set search_path = public
+as $$
+declare item_price integer;
+begin
+  if not public.is_moderator() then
+    raise exception 'Only staff can claim items for free';
+  end if;
+  select price into item_price from public.stardust_shop where id = item and active;
+  if item_price is null then raise exception 'Shop item is unavailable'; end if;
+  if exists (select 1 from public.stardust_inventory where user_id = auth.uid() and item_id = item) then
+    raise exception 'Item already owned';
+  end if;
+  insert into public.stardust_inventory (user_id, item_id) values (auth.uid(), item);
+  insert into public.stardust_purchases (user_id, item_id, price_paid) values (auth.uid(), item, item_price);
+  return coalesce((select balance from public.stardust_wallets where user_id = auth.uid()), 0);
 end;
 $$;
 
@@ -155,9 +212,14 @@ create table if not exists public.profiles (
   approved_nickname text check (approved_nickname is null or char_length(approved_nickname) between 1 and 24),
   pending_nickname text check (pending_nickname is null or char_length(pending_nickname) between 1 and 24),
   nickname_status text not null default 'none' check (nickname_status in ('none', 'pending', 'approved', 'rejected')),
-  -- Equipped cosmetics: ids from stardust_inventory (profile-* / background-*).
+  -- Equipped cosmetics: ids from the user's stardust_inventory.
   avatar_url text,
   background_url text,
+  equipped_chat_glow text,
+  equipped_chat_tag text,
+  equipped_chat_stickers text,
+  equipped_chat_vfx text,
+  equipped_chat_style text,
   created_at timestamptz not null default now()
 );
 
@@ -190,6 +252,11 @@ alter table public.profiles add column if not exists pending_nickname text;
 alter table public.profiles add column if not exists nickname_status text not null default 'none';
 alter table public.profiles add column if not exists display_name text;
 alter table public.profiles add column if not exists access_code_hash text;
+alter table public.profiles add column if not exists equipped_chat_glow text;
+alter table public.profiles add column if not exists equipped_chat_tag text;
+alter table public.profiles add column if not exists equipped_chat_stickers text;
+alter table public.profiles add column if not exists equipped_chat_vfx text;
+alter table public.profiles add column if not exists equipped_chat_style text;
 alter table public.profiles drop constraint if exists profiles_username_check;
 
 -- Child accounts use a first-name username and a teacher-issued code. Store only
@@ -315,6 +382,26 @@ drop trigger if exists moderate_message_before_insert on public.messages;
 create trigger moderate_message_before_insert before insert on public.messages
 for each row execute function public.moderate_message();
 
+-- Coin VFX is intentionally rate-limited server-side as well as in the UI.
+create or replace function public.enforce_coin_message_limit()
+returns trigger language plpgsql security definer set search_path = public
+as $$
+begin
+  if position(chr(129689) in new.content) > 0 and (
+    select count(*) from public.messages
+    where sender_id = new.sender_id
+      and position(chr(129689) in content) > 0
+      and created_at > now() - interval '5 minutes'
+  ) >= 3 then
+    raise exception 'Coin VFX is limited to 3 coin messages every 5 minutes.';
+  end if;
+  return new;
+end;
+$$;
+drop trigger if exists enforce_coin_message_limit_before_insert on public.messages;
+create trigger enforce_coin_message_limit_before_insert before insert on public.messages
+for each row execute function public.enforce_coin_message_limit();
+
 create or replace function public.apply_approved_nickname()
 returns trigger language plpgsql security definer set search_path = public
 as $$
@@ -365,7 +452,7 @@ insert into public.sessions (name, status)
 select room.name, 'live'
 from (values
   ('Blender'), ('Tinkercad'), ('E-Sports'),
-  ('Minecraft Command Science'), ('Roblox Game Design')
+  ('Minecraft Command Science'), ('Roblox Game Design'), ('Game Art & Animation')
 ) as room(name)
 where not exists (select 1 from public.sessions existing where existing.name = room.name);
 
@@ -428,14 +515,37 @@ from unnest(array[
 ]) as critter
 on conflict (id) do nothing;
 
--- 3) Allow users to equip cosmetics they own. Only 'profile-*' / 'background-*'
+-- Backgrounds remain profile cosmetics; only the old "Scene" label is retired.
+update public.stardust_shop
+set name = regexp_replace(name, ' Scene$', ''),
+    description = replace(description, ' background for your Pixelings profile.', ' profile background for your Pixelings profile.')
+where id like 'background-%';
+
+-- Happy Slime is the free starter profile look. Backfill existing profiles and
+-- make the grant idempotent so re-running this schema is safe.
+insert into public.stardust_inventory (user_id, item_id)
+select p.id, starter.item_id
+from public.profiles p
+cross join (values ('profile-happy-slime'), ('background-happy-slime')) as starter(item_id)
+where not exists (
+  select 1 from public.stardust_inventory i
+  where i.user_id = p.id and i.item_id = starter.item_id
+)
+on conflict (user_id, item_id) do nothing;
+
+update public.profiles
+set avatar_url = coalesce(avatar_url, 'profile-happy-slime'),
+    background_url = coalesce(background_url, 'background-happy-slime')
+where avatar_url is null or background_url is null;
+
+-- 3) Allow users to equip cosmetics they own. Profile pictures, backgrounds,
+-- and chat cosmetics must all be present in the user's inventory.
 --    ids from the user's own stardust_inventory may be written to those columns.
 create or replace function public.can_equip_cosmetic(target text)
 returns boolean language sql stable security definer set search_path = public
 as $$
   select target is null
-    or (target like 'profile-%' or target like 'background-%')
-       and exists (
+    or exists (
          select 1 from public.stardust_inventory
          where user_id = auth.uid() and item_id = target
        );
@@ -448,4 +558,27 @@ with check (
   id = auth.uid()
   and public.can_equip_cosmetic(avatar_url)
   and public.can_equip_cosmetic(background_url)
+  and public.can_equip_cosmetic(equipped_chat_glow)
+  and public.can_equip_cosmetic(equipped_chat_tag)
+  and public.can_equip_cosmetic(equipped_chat_stickers)
+  and public.can_equip_cosmetic(equipped_chat_vfx)
+  and public.can_equip_cosmetic(equipped_chat_style)
 );
+
+-- Automatically grant the same starter look to profiles created later.
+create or replace function public.grant_starter_profile_cosmetics()
+returns trigger language plpgsql security definer set search_path = public
+as $$
+begin
+  insert into public.stardust_inventory (user_id, item_id)
+  values (new.id, 'profile-happy-slime'), (new.id, 'background-happy-slime')
+  on conflict (user_id, item_id) do nothing;
+  new.avatar_url := coalesce(new.avatar_url, 'profile-happy-slime');
+  new.background_url := coalesce(new.background_url, 'background-happy-slime');
+  return new;
+end;
+$$;
+drop trigger if exists grant_starter_profile_cosmetics_before_insert on public.profiles;
+create trigger grant_starter_profile_cosmetics_before_insert
+before insert on public.profiles
+for each row execute function public.grant_starter_profile_cosmetics();

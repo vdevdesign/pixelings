@@ -106,6 +106,10 @@ export function PtlPosts({ section, canEdit, userId }: PtlPostsProps) {
     if (error) setNotice(error.message); else await loadPosts();
   };
 
+  const editingPost = editingId && editingId !== 'new'
+    ? posts.find((post) => post.id === editingId)
+    : undefined;
+
   return <>
     {canEdit && <div className="ptl-editor-tools">
       <button className="secondary-action" type="button" onClick={() => startEdit()}>Add {section === 'news' ? 'news' : 'tale'}</button>
@@ -113,6 +117,10 @@ export function PtlPosts({ section, canEdit, userId }: PtlPostsProps) {
     {editingId && <form className="ptl-editor" onSubmit={savePost}>
       <label>Title<input value={draft.title} maxLength={140} onChange={(event) => setDraft({ ...draft, title: event.target.value })} /></label>
       <label>Post text<textarea value={draft.body} maxLength={5000} rows={4} onChange={(event) => setDraft({ ...draft, body: event.target.value })} /></label>
+      {editingPost?.image_path && <div className="ptl-editor-photo">
+        <img src={imageUrl(editingPost.image_path)} alt={editingPost.image_alt || editingPost.title} />
+        <button className="text-action danger-action" type="button" onClick={() => removeImage(editingPost)}>Remove current photo</button>
+      </div>}
       <label>Photo <span>(optional, JPG/PNG/WebP/GIF up to 10 MB)</span><input type="file" accept="image/jpeg,image/png,image/webp,image/gif" onChange={(event) => {
         const file = event.target.files?.[0] || null;
         if (file && (!file.type.startsWith('image/') || file.size > maxImageBytes)) {

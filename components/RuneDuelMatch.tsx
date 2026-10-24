@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useCallback } from 'react';
 
 const ASSETS = {
   bg: '/assets/rune-duel-card-bg.png',

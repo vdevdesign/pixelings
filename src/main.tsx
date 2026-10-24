@@ -8,6 +8,7 @@ import { RuneDuelMatch } from '../components/RuneDuelMatch';
 import { MiniChat } from '../components/MiniChat';
 import { PtlPosts } from '../components/PtlPosts';
 import { ChatRoom } from '../components/chatRooms';
+import { avatarItemById, profileItems } from '../components/avatarItems';
 import { supabase } from '../lib/supabaseClient';
 import './styles.css';
 import './mobile.css';
@@ -32,6 +33,9 @@ function App() {
   const [authUserId, setAuthUserId] = React.useState('');
   const [role, setRole] = React.useState('computer');
   const [approvedNickname, setApprovedNickname] = React.useState('');
+  const [profileAvatarId, setProfileAvatarId] = React.useState('');
+  const [profileBackgroundId, setProfileBackgroundId] = React.useState('');
+  const [chatCosmetics, setChatCosmetics] = React.useState({ glow: '', tag: '', stickers: '', vfx: '', style: '' });
   const [loginError, setLoginError] = React.useState('');
   const [failedStaffAttempts, setFailedStaffAttempts] = React.useState(0);
   const [resetMode, setResetMode] = React.useState(false);
@@ -39,20 +43,27 @@ function App() {
   const [confirmPassword, setConfirmPassword] = React.useState('');
   const [resetNotice, setResetNotice] = React.useState('');
   const [activeTab, setActiveTab] = React.useState<'home' | 'chat' | 'games' | 'shop' | 'inventory'>('home');
-  // Equipped avatar cosmetics, mirrored from the profiles table for display.
-  const [equippedAvatar, setEquippedAvatar] = React.useState<{ avatarUrl: string | null; backgroundUrl: string | null }>({ avatarUrl: null, backgroundUrl: null });
   const [chatRoom, setChatRoom] = React.useState<ChatRoom>('Blender');
+  // Durable Stardust wallet + inventory, loaded once per authenticated session
+  // and shared across the shop and inventory tabs so purchases survive tab switches.
+  const [walletBalance, setWalletBalance] = React.useState<number | null>(null);
+  const [ownedItems, setOwnedItems] = React.useState<string[]>([]);
   const [allChatsLocked, setAllChatsLocked] = React.useState(false);
   const [chatLockNotice, setChatLockNotice] = React.useState('');
   const [changingAllChats, setChangingAllChats] = React.useState(false);
   const [manualChatOverrides, setManualChatOverrides] = React.useState<Record<string, boolean>>({});
   const kidLoginInProgress = React.useRef(false);
 
+  // Shared chat state lifted to App level to sync Main Chat and Mini Chat
+  const [sharedMessages, setSharedMessages] = React.useState<import('../src/hooks/usePixelingsChat').Message[]>([]);
+  const [sharedIsLive, setSharedIsLive] = React.useState<boolean>(false);
+  const [sharedLoading, setSharedLoading] = React.useState<boolean>(true);
+
   const loadAuthenticatedUser = async (session: { user: { id: string } } | null) => {
     if (!session?.user || kidLoginInProgress.current) return;
     setAuthUserId(session.user.id);
     setUserId(session.user.id);
-    const { data: profile, error } = await supabase.from('profiles').select('username, role, approved_nickname, avatar_url, background_url').eq('id', session.user.id).single();
+    const { data: profile, error } = await supabase.from('profiles').select('username, role, approved_nickname, avatar_url, background_url, equipped_chat_glow, equipped_chat_tag, equipped_chat_stickers, equipped_chat_vfx, equipped_chat_style').eq('id', session.user.id).single();
     if (error || !profile) {
       setLoginError('This teacher or moderator account is not provisioned yet. Run supabase/staff_profiles.sql in the Supabase SQL Editor, then try again.');
       return;
@@ -62,7 +73,9 @@ function App() {
     setIsTeacher(profile.role !== 'computer');
     setIsInstantPreview(false);
     setApprovedNickname(profile.approved_nickname || '');
-    setEquippedAvatar({ avatarUrl: profile.avatar_url || null, backgroundUrl: profile.background_url || null });
+    setProfileAvatarId(profile.avatar_url || 'profile-happy-slime');
+    setProfileBackgroundId(profile.background_url || 'background-happy-slime');
+    setChatCosmetics({ glow: profile.equipped_chat_glow || '', tag: profile.equipped_chat_tag || '', stickers: profile.equipped_chat_stickers || '', vfx: profile.equipped_chat_vfx || '', style: profile.equipped_chat_style || '' });
     setLoggedIn(true);
   };
 
@@ -83,7 +96,11 @@ function App() {
         setIsTeacher(false);
         setIsInstantPreview(false);
         setApprovedNickname('');
-        setEquippedAvatar({ avatarUrl: null, backgroundUrl: null });
+        setProfileAvatarId('');
+        setProfileBackgroundId('');
+        setChatCosmetics({ glow: '', tag: '', stickers: '', vfx: '', style: '' });
+        setWalletBalance(null);
+        setOwnedItems([]);
         setEmailPassword('');
         setKidEmailVerified(false);
         setFirstName('');
@@ -101,6 +118,19 @@ function App() {
     void supabase.auth.getSession().then(({ data }) => loadAuthenticatedUser(data.session));
     return () => authListener.subscription.unsubscribe();
   }, []);
+
+  // Load wallet + inventory once per authenticated session. Kept at the app
+  // level so purchases persist across tab switches (shop <-> inventory).
+  React.useEffect(() => {
+    if (isInstantPreview) { setWalletBalance(50000); setOwnedItems(['profile-happy-slime', 'background-happy-slime']); return; }
+    if (!authUserId) { setWalletBalance(null); setOwnedItems([]); return; }
+    let cancelled = false;
+    supabase.from('stardust_wallets').select('balance').eq('user_id', authUserId).single()
+      .then(({ data }) => { if (!cancelled && data) setWalletBalance((data as { balance: number }).balance); });
+    supabase.from('stardust_inventory').select('item_id').eq('user_id', authUserId)
+      .then(({ data }) => { if (!cancelled) setOwnedItems((data as { item_id: string }[] | null)?.map((entry) => entry.item_id) ?? []); });
+    return () => { cancelled = true; };
+  }, [authUserId, isInstantPreview]);
 
   const handleLogin = async () => {
     setLoginError('');
@@ -150,6 +180,10 @@ function App() {
     setComputer(selectedChild.username);
     setRole('computer');
     setApprovedNickname(selectedChild.approved_nickname || '');
+    const { data: childProfile } = await supabase.from('profiles').select('avatar_url, background_url, equipped_chat_glow, equipped_chat_tag, equipped_chat_stickers, equipped_chat_vfx, equipped_chat_style').eq('id', selectedChild.id).single();
+    setProfileAvatarId(childProfile?.avatar_url || 'profile-happy-slime');
+    setProfileBackgroundId(childProfile?.background_url || 'background-happy-slime');
+    setChatCosmetics({ glow: childProfile?.equipped_chat_glow || '', tag: childProfile?.equipped_chat_tag || '', stickers: childProfile?.equipped_chat_stickers || '', vfx: childProfile?.equipped_chat_vfx || '', style: childProfile?.equipped_chat_style || '' });
     setIsTeacher(false);
     setIsInstantPreview(false);
       setLoggedIn(true);
@@ -230,7 +264,9 @@ function App() {
     setIsTeacher(false);
     setIsInstantPreview(false);
     setApprovedNickname('');
-    setEquippedAvatar({ avatarUrl: null, backgroundUrl: null });
+    setProfileAvatarId('');
+    setProfileBackgroundId('');
+    setChatCosmetics({ glow: '', tag: '', stickers: '', vfx: '', style: '' });
     setEmailPassword('');
     setKidEmailVerified(false);
     setFirstName('');
@@ -247,6 +283,8 @@ function App() {
     setRole(teacherView ? 'moderator' : 'computer');
     setIsTeacher(teacherView);
     setIsInstantPreview(true);
+    setProfileAvatarId('profile-happy-slime');
+    setOwnedItems(['profile-happy-slime', 'background-happy-slime']);
     setApprovedNickname('');
     setLoggedIn(true);
   };
@@ -272,6 +310,7 @@ function App() {
       <img className="brand-logo login-logo" src={logoSrc} alt="Pixels Tech Lab" />
       <h1 className="login-title">Pixelings <em>Chat</em></h1>
       <p className="hero-copy">Use your work email, or sign in to the classroom and choose your own Pixelings account.</p>
+      <form onSubmit={(event) => { event.preventDefault(); void handleLogin(); }}>
       {!kidEmailVerified && <div className="login-tabs" role="tablist" aria-label="Login type">
         <button type="button" className={loginType === 'kid' ? 'active' : ''} onClick={() => { setLoginType('kid'); setLoginError(''); }}>Kids</button>
         <button type="button" className={loginType === 'staff' ? 'active' : ''} onClick={() => { setLoginType('staff'); setLoginError(''); }}>Teacher / moderator</button>
@@ -298,7 +337,8 @@ function App() {
       </>}
       {loginError && <p className="login-error">{loginError}</p>}
       {resetNotice && <p className="login-help" role="status">{resetNotice}</p>}
-      <button className="login-button" disabled={kidEmailVerified ? !firstName || accessCode.length < 4 : !email || !emailPassword} onClick={handleLogin}>{kidEmailVerified ? 'Verify account' : (loginType === 'kid' ? 'Continue' : 'Sign in')}</button>
+      <button className="login-button" type="submit" disabled={kidEmailVerified ? !firstName || accessCode.length < 4 : !email || !emailPassword}>{kidEmailVerified ? 'Verify account' : (loginType === 'kid' ? 'Continue' : 'Sign in')}</button>
+      </form>
       {loginType === 'staff' && <button type="button" className="reset-link-button" disabled={!email.trim() || !email.includes('@')} onClick={requestPasswordReset}>Reset password</button>}
       {/* TEST-ONLY: remove this button before launch. */}
       {showInstantTest && <button type="button" className="instant-test-button" onClick={handleInstantTestAccess}>⚡ Instant access (testing only)</button>}
@@ -332,7 +372,7 @@ function App() {
         {isTeacher && <button className={`global-chat-lock ${allChatsLocked ? 'global-chat-unlock' : ''}`} onClick={toggleAllChats} disabled={changingAllChats}>
           {changingAllChats ? 'Updating…' : allChatsLocked ? 'Unlock all chats' : 'Lock all chats'}
         </button>}
-        <span className="nav-account">{approvedNickname || computer}</span>
+        <span className="nav-account"><span className="nav-profile-art" style={{ backgroundImage: `url(${avatarItemById.get(profileBackgroundId)?.src || avatarItemById.get('background-happy-slime')?.src})` }}>{(avatarItemById.get(profileAvatarId) || avatarItemById.get('profile-happy-slime') || profileItems[0]) && <img src={(avatarItemById.get(profileAvatarId) || avatarItemById.get('profile-happy-slime') || profileItems[0])!.src} alt="" />}</span>{approvedNickname || computer}</span>
         <button className="logout-button" type="button" onClick={handleLogout}>Log out</button>
       </nav>
       {chatLockNotice && <p className="global-chat-notice" role="status">{chatLockNotice}</p>}
@@ -396,7 +436,29 @@ function App() {
       <section className="chat-page-title">
         <h1>Pixelings <em>Chat</em></h1>
       </section>
-      <PixelingsChat room={chatRoom} onRoomChange={setChatRoom} currentUserId={userId} currentUsername={approvedNickname || computer} currentUsernameHandle={computer} isAdmin={isTeacher || role !== 'computer'} isModerator={isTeacher || role !== 'computer'} demoMode={isInstantPreview} allChatsLocked={allChatsLocked} manualChatOverride={manualChatOverrides[chatRoom]} onManualStatusChange={(live) => setManualChatOverrides((overrides) => ({ ...overrides, [chatRoom]: live }))} />
+      <PixelingsChat 
+        room={chatRoom} 
+        onRoomChange={setChatRoom} 
+        currentUserId={userId} 
+        currentUsername={approvedNickname || computer} 
+        currentUsernameHandle={computer} 
+        currentProfile={{ avatarUrl: profileAvatarId, backgroundUrl: profileBackgroundId }} 
+        chatCosmetics={chatCosmetics} 
+        isAdmin={isTeacher || role !== 'computer'} 
+        isModerator={isTeacher || role !== 'computer'} 
+        demoMode={isInstantPreview} 
+        allChatsLocked={allChatsLocked} 
+        manualChatOverride={manualChatOverrides[chatRoom]} 
+        onManualStatusChange={(live) => setManualChatOverrides((overrides) => ({ ...overrides, [chatRoom]: live }))}
+        externalState={{
+          messages: sharedMessages,
+          setMessages: setSharedMessages,
+          isLive: sharedIsLive,
+          setIsLive: setSharedIsLive,
+          loading: sharedLoading,
+          setLoading: setSharedLoading
+        }}
+      />
       <p className="demo-note">Preview mode · moderation is required for flagged messages</p>
       </>
       : activeTab === 'games' ? <>
@@ -405,14 +467,29 @@ function App() {
         <MiniTrivia userId={userId} demoMode={isInstantPreview} />
       </>
       : activeTab === 'inventory' ? <>
-        <section className="hero"><h1>My <em>Inventory</em></h1><p className="hero-copy">Profile pictures and backgrounds you own. Equip one of each to style your profile.</p></section>
-        <InventoryPage accountId={authUserId} demoMode={isInstantPreview} canManage={isTeacher} onProfileChange={setEquippedAvatar} />
+        <section className="hero"><h1>My <em>Inventory</em></h1><p className="hero-copy">Equip your profile picture and chat cosmetics from everything you own.</p></section>
+        <InventoryPage accountId={authUserId} demoMode={isInstantPreview} balance={walletBalance} ownedItems={ownedItems} onOwnedChange={setOwnedItems} onBalanceChange={setWalletBalance} onProfileChange={(avatarId, backgroundId) => { setProfileAvatarId(avatarId); setProfileBackgroundId(backgroundId); }} onChatCosmeticsChange={setChatCosmetics} />
       </>
       : <>
         <section className="hero"><h1>Stardust <em>Shop</em></h1><p className="hero-copy">Spend your sparkle on chat upgrades, identity flexes, and delightful chaos.</p></section>
-        <StardustShop accountId={authUserId} demoMode={isInstantPreview} canManage={isTeacher} />
+        <StardustShop accountId={authUserId} demoMode={isInstantPreview} canManage={isTeacher} balance={walletBalance} ownedItems={ownedItems} onOwnedChange={setOwnedItems} onBalanceChange={setWalletBalance} />
       </>}
-      {activeTab !== 'chat' && <MiniChat room={chatRoom} onRoomChange={setChatRoom} userId={userId} username={approvedNickname || computer} demoMode={isInstantPreview} />}
+      {activeTab !== 'chat' && <MiniChat 
+        room={chatRoom} 
+        onRoomChange={setChatRoom} 
+        userId={userId} 
+        username={approvedNickname || computer} 
+        chatCosmetics={chatCosmetics} 
+        demoMode={isInstantPreview}
+        externalState={{
+          messages: sharedMessages,
+          setMessages: setSharedMessages,
+          isLive: sharedIsLive,
+          setIsLive: setSharedIsLive,
+          loading: sharedLoading,
+          setLoading: setSharedLoading
+        }}
+      />}
     </main>
   );
 }

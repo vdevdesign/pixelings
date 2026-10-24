@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../lib/supabaseClient';
 
 export interface TriviaQuestion {
@@ -48,7 +48,7 @@ export function MiniTrivia({ userId, demoMode = false }: { userId: string; demoM
     if (error) setStatus('Correct! Your reward could not be saved. Please tell your teacher.');
   }, [demoMode, userId]);
 
-  const answer = React.useCallback((index: number | null) => {
+  const answer = useCallback((index: number | null) => {
     if (selectedIndex !== null || finished) return;
     const isCorrect = index !== null && index === question.correctIndex;
     setSelectedIndex(index);
@@ -61,7 +61,7 @@ export function MiniTrivia({ userId, demoMode = false }: { userId: string; demoM
     }
   }, [award, finished, question, selectedIndex]);
 
-  React.useEffect(() => {
+  useEffect(() => {
     if (!started || selectedIndex !== null || finished) return;
     const timer = window.setInterval(() => setTimeLeft((value) => {
       if (value <= 1) { window.clearInterval(timer); answer(null); return 0; }

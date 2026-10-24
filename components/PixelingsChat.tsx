@@ -2,6 +2,35 @@ import React, { useEffect, useState } from 'react';
 import { usePixelingsChat } from '../src/hooks/usePixelingsChat';
 import { moderationReason } from '../lib/moderation';
 import { CHAT_ROOMS, ChatRoom } from './chatRooms';
+import { avatarItemById, profileItems } from './avatarItems';
+
+const PIXEL_STICKERS = ['✨', '🎉', '🧪', '🔥'];
+const COIN_EMOJI = '\u{1FA99}';
+const VFX_EMOJIS = [{ emoji: COIN_EMOJI, label: 'Coin burst' }];
+const KID_FRIENDLY_EMOJIS = [
+  '😀', '😂', '😊', '😇', '😎', '🤩', '🥳', '🥺', '😭', '😱',
+  '❤️', '✨', '🌟', '🔥', '🌈', '☀️', '🌙', '☁️', '⚡', '❄️',
+  '🐶', '🐱', '🐭', '🐹', '🐰', '🦊', '🐻', '🐼', '🐨', '🐯',
+  '🦁', '🐮', '🐷', '🐸', '🐵', '🐔', '🐧', '🐦', '🐤', '🦄',
+  '🍎', '🍐', '🍊', '🍋', '🍌', '🍉', '🍇', '🍓', '🫐', '🍈',
+  '🍕', '🍔', '🍟', '🌭', '🍿', '🍦', '🍩', '🍪', '🍰', '🍬',
+  '⚽', '🏀', '🏈', '⚾', '🎾', '🏐', '🏉', '🎱', '🎯', '🎮',
+  '🚀', '🛸', '🚁', '🏎️', '🚲', '⛵', '🛶', '🎡', '🎠', '🎢',
+  '🎈', '🎁', '🎊', '🎉', '🎏', '🎇', '🎆', '🧸', '🎨', '🎬'
+];
+
+const getSendErrorMessage = (error: unknown, fallback: string) => {
+  if (error instanceof Error && error.message) return error.message;
+
+  if (typeof error === 'object' && error !== null) {
+    const details = error as { message?: unknown; details?: unknown; hint?: unknown };
+    if (typeof details.message === 'string' && details.message) return details.message;
+    if (typeof details.details === 'string' && details.details) return details.details;
+    if (typeof details.hint === 'string' && details.hint) return details.hint;
+  }
+
+  return fallback;
+};
 
 interface ChatProps {
   room: ChatRoom;
@@ -15,6 +44,9 @@ interface ChatProps {
   allChatsLocked?: boolean;
   manualChatOverride?: boolean;
   onManualStatusChange?: (isLive: boolean) => void;
+  chatCosmetics?: { glow: string; tag: string; stickers: string; vfx: string; style: string };
+  currentProfile?: { avatarUrl: string; backgroundUrl: string };
+  externalState?: any;
 }
 
 export const PixelingsChat: React.FC<ChatProps> = ({
@@ -29,32 +61,70 @@ export const PixelingsChat: React.FC<ChatProps> = ({
   allChatsLocked = false,
   manualChatOverride,
   onManualStatusChange,
+  chatCosmetics = { glow: '', tag: '', stickers: '', vfx: '', style: '' },
+  currentProfile = { avatarUrl: 'profile-happy-slime', backgroundUrl: 'background-happy-slime' },
+  externalState,
 }) => {
-  const { messages, reviewQueue, participants, isLive, lockState, loading, sendMessage, requestNickname: requestNicknameToServer, purgeChat, approveMessage, rejectMessage, toggleLive } = usePixelingsChat(
+  const messagesContainerRef = React.useRef<HTMLDivElement>(null);
+  const vfxMenuRef = React.useRef<HTMLDivElement>(null);
+  const emojiMenuRef = React.useRef<HTMLDivElement>(null);
+  const [activeVfxId, setActiveVfxId] = React.useState<string | null>(null);
+  const vfxCooldowns = React.useRef<Map<string, number>>(new Map());
+  const { messages, reviewQueue, participants, isLive, lockState, loading, sendMessage, requestNickname: requestNicknameToServer, purgeChat, deleteMessage, approveMessage, rejectMessage, toggleLive } = usePixelingsChat(
     room,
     currentUserId,
     demoMode,
-    isModerator
+    isModerator,
+    externalState
   );
 
-  const [input, setInput] = useState('');
-  const [whisperTarget, setWhisperTarget] = useState<string>('');
-  const [nickname, setNickname] = useState(currentUsername);
-  const [nicknameDraft, setNicknameDraft] = useState(currentUsername);
-  const [nicknameNotice, setNicknameNotice] = useState('');
-  const [showModeration, setShowModeration] = useState(false);
-  const [lockReasonDraft, setLockReasonDraft] = useState('Class chat is paused while we reset the room.');
-  const [statusNotice, setStatusNotice] = useState('');
-  const [openUsername, setOpenUsername] = useState<string | null>(null);
-  const [nicknameQueue, setNicknameQueue] = useState<Array<{ id: string; user: string; nickname: string; reason: string }>>(
+  const [input, setInput] = React.useState('');
+  const [whisperTarget, setWhisperTarget] = React.useState<string>('');
+  const [nickname, setNickname] = React.useState(currentUsername);
+  const [nicknameDraft, setNicknameDraft] = React.useState(currentUsername);
+  const [nicknameNotice, setNicknameNotice] = React.useState('');
+  const [showModeration, setShowModeration] = React.useState(false);
+  const [lockReasonDraft, setLockReasonDraft] = React.useState('Class chat is paused while we reset the room.');
+  const [statusNotice, setStatusNotice] = React.useState('');
+  const [openUsername, setOpenUsername] = React.useState<string | null>(null);
+  const [showVfxMenu, setShowVfxMenu] = React.useState(false);
+  const [showEmojiMenu, setShowEmojiMenu] = React.useState(false);
+  const [nicknameQueue, setNicknameQueue] = React.useState<Array<{ id: string; user: string; nickname: string; reason: string }>>(
     isModerator ? [{ id: 'nickname-1', user: 'Pixels7', nickname: 'CodeWizard', reason: 'All nicknames require approval' }] : []
   );
   const liveUsername = participants.find((participant) => participant.id === currentUserId)?.name || currentUsername;
 
-  useEffect(() => {
+  React.useEffect(() => {
     setNickname(liveUsername);
     setNicknameDraft(liveUsername);
   }, [liveUsername]);
+
+  React.useEffect(() => {
+    if (messagesContainerRef.current) {
+      const { scrollTop, scrollHeight, clientHeight } = messagesContainerRef.current;
+      const isAtBottom = scrollHeight - scrollTop <= clientHeight + 50;
+      if (isAtBottom) {
+        messagesContainerRef.current.scrollTo({
+          top: scrollHeight,
+          behavior: 'smooth',
+        });
+      }
+    }
+  }, [messages]);
+
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (vfxMenuRef.current && !vfxMenuRef.current.contains(event.target as Node)) {
+        setShowVfxMenu(false);
+      }
+      if (emojiMenuRef.current && !emojiMenuRef.current.contains(event.target as Node)) {
+        setShowEmojiMenu(false);
+      }
+    }
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
 
   const handleSend = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -69,6 +139,20 @@ export const PixelingsChat: React.FC<ChatProps> = ({
       setInput('');
     } catch (err) {
       console.error('Failed to send message:', err);
+      setStatusNotice(err instanceof Error ? err.message : 'Could not send that message.');
+    }
+  };
+
+  const handleSendVfx = async (emoji: string) => {
+    if (!chatIsLive && !isModerator) return;
+    setShowVfxMenu(false);
+    setShowEmojiMenu(false);
+    setStatusNotice('');
+    try {
+      await sendMessage(emoji, undefined, liveUsername);
+    } catch (err) {
+      console.error('Failed to send VFX:', err);
+      setStatusNotice(getSendErrorMessage(err, 'Could not send that effect.'));
     }
   };
 
@@ -100,6 +184,27 @@ export const PixelingsChat: React.FC<ChatProps> = ({
     } catch (error) {
       console.error('Failed to update chat status:', error);
       setStatusNotice('Could not update the room status. Please try again.');
+    }
+  };
+
+  const handlePurge = async () => {
+    if (!window.confirm(`Delete every message in ${room}?`)) return;
+    try {
+      await purgeChat();
+      setStatusNotice('Chat purged.');
+    } catch (error) {
+      console.error('Failed to purge chat:', error);
+      setStatusNotice('Could not purge this chat. Check moderator permissions.');
+    }
+  };
+
+  const handleDeleteMessage = async (messageId: string) => {
+    try {
+      await deleteMessage(messageId);
+      setStatusNotice('Message deleted.');
+    } catch (error) {
+      console.error('Failed to delete message:', error);
+      setStatusNotice('Could not delete that message. Check moderator permissions.');
     }
   };
 
@@ -153,7 +258,7 @@ export const PixelingsChat: React.FC<ChatProps> = ({
             <button onClick={handleStatusChange} className={`toggle-button ${chatIsLive ? 'lock-action' : 'unlock-action'}`} aria-label={chatIsLive ? `Lock ${room} chat` : `Unlock ${room} chat`}>
               {chatIsLive ? 'Lock chat' : 'Unlock chat'}
             </button>
-            <button onClick={purgeChat} className="purge-button">Purge Chat</button>
+            <button onClick={handlePurge} className="purge-button">Purge Chat</button>
         </div>}
         <div className="chat-controls">
         <div className="profile-tools">
@@ -173,29 +278,76 @@ export const PixelingsChat: React.FC<ChatProps> = ({
       {statusNotice && <p className="status-notice" role="status">{statusNotice}</p>}
 
       {/* 2. Messages List */}
-      <div className="messages">
+      <div className="messages" ref={messagesContainerRef}>
         {messages.length === 0 ? (
           <p className="empty">No messages yet.</p>
         ) : (
-          messages.map((msg) => {
+          messages.map((msg, index) => {
+            const prevMsg = messages[index - 1];
+            const isSameSender = prevMsg && prevMsg.sender_id === msg.sender_id && !prevMsg.is_whisper && !msg.is_whisper;
             const isMe = msg.sender_id === currentUserId;
+            const participantProfile = participants.find((participant) => participant.id === msg.sender_id);
+            const senderProfile = isMe ? { ...participantProfile, ...currentProfile } : participantProfile;
+            const profileIcon = avatarItemById.get(senderProfile?.avatarUrl || '') || avatarItemById.get('profile-happy-slime') || profileItems[0];
+            const profileBackground = avatarItemById.get(senderProfile?.backgroundUrl || 'background-happy-slime');
             return (
               <div key={msg.id} className={`message ${isMe ? 'mine' : ''} ${msg.is_whisper ? 'whisper' : ''}`}>
-                <div className="message-meta">
-                  <button type="button" className="message-name" onClick={() => setOpenUsername(openUsername === msg.id ? null : msg.id)} title="Show username">
-                    {msg.sender_name}
-                  </button>
-                  {openUsername === msg.id && <span className="username-popover">username: {msg.sender_username || (isMe ? currentUsernameHandle : msg.sender_name)}</span>}
-                  {msg.is_whisper && (
-                    <span className="whisper-tag">
-                      whisper
-                    </span>
+                {!isSameSender && (
+                  <div className="message-meta" onMouseEnter={() => setOpenUsername(msg.id)} onMouseLeave={() => setOpenUsername((open) => open === msg.id ? null : open)}>
+                    <span className={`chat-profile-icon ${isMe && chatCosmetics.glow ? 'chat-name-glow' : ''}`} style={{ backgroundImage: profileBackground ? `url(${profileBackground.src})` : undefined }}><img src={profileIcon.src} alt={`${msg.sender_name}'s profile icon`} /></span>
+                    <button type="button" className={`message-name ${isMe && chatCosmetics.glow ? 'chat-name-glow' : ''}`} onClick={() => setOpenUsername(openUsername === msg.id ? null : msg.id)} title="Show username">
+                      {msg.sender_name}
+                    </button>
+                    {isMe && chatCosmetics.tag && <span className="equipped-chat-tag">{chatCosmetics.tag.replace(/^tag-/, '').replace(/-/g, ' ')}</span>}
+                    {openUsername === msg.id && <span className="profile-popover">
+                      <span className="profile-popover-art" style={profileBackground ? { backgroundImage: `url(${profileBackground.src})` } : undefined}><img src={profileIcon.src} alt="" /></span>
+                      <span><strong>{msg.sender_name}</strong><small>@{msg.sender_username || (isMe ? currentUsernameHandle : msg.sender_name)}</small></span>
+                    </span>}
+                    {msg.is_whisper && (
+                      <span className="whisper-tag">
+                        whisper
+                      </span>
+                    )}
+                  </div>
+                )}
+                <div className={`bubble-wrapper ${isMe ? 'mine' : ''}`}>
+                  <div 
+                    className={`bubble ${isMe && chatCosmetics.style === 'cyber-style' ? 'cyber-bubble' : ''}`}
+                    onClick={() => {
+                      if (msg.content.includes(COIN_EMOJI)) {
+                        const now = Date.now();
+                        const lastRun = vfxCooldowns.current.get(msg.id) || 0;
+                        // Prevent restart if animation is still likely running (approx 1.6s duration)
+                        if (now - lastRun < 1600) return;
+
+                        vfxCooldowns.current.set(msg.id, now);
+                        setActiveVfxId(null);
+                        setTimeout(() => setActiveVfxId(msg.id), 10);
+                      }
+                    }}
+                    style={{ cursor: msg.content.includes(COIN_EMOJI) ? 'pointer' : 'default' }}
+                  >
+                    {msg.content}
+                    {msg.content.includes(COIN_EMOJI) && (
+                      <span 
+                        key={activeVfxId === msg.id ? 'restart' : 'static'} 
+                        className="coin-burst" 
+                        aria-label="coin effect"
+                      >
+                        <span>🪙</span><span>🪙</span><span>🪙</span><span>🪙</span><span>🪙</span><span>🪙</span><span>🪙</span>
+                      </span>
+                    )}
+                  </div>
+                  {isModerator && (
+                    <button 
+                      type="button" 
+                      className="message-delete bubble-delete" 
+                      onClick={(event) => { event.stopPropagation(); void handleDeleteMessage(msg.id); }} 
+                      title="Delete message"
+                    >
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>
+                    </button>
                   )}
-                </div>
-                <div
-                  className="bubble"
-                >
-                  {msg.content}
                 </div>
               </div>
             );
@@ -231,6 +383,33 @@ export const PixelingsChat: React.FC<ChatProps> = ({
                 placeholder="Type a message..."
                 className="message-input"
               />
+              { (chatCosmetics.stickers === 'pixel-stickers' || demoMode) && <div className="emoji-picker" aria-label="Emoji set">
+                <div className="picker-container">
+                  <button type="button" className="vfx-menu-toggle" onClick={() => {
+                    setShowEmojiMenu((open) => !open);
+                    setShowVfxMenu(false);
+                  }} aria-label="Open emojis" aria-expanded={showEmojiMenu}>😊</button>
+                  <span className="picker-label">Emoji</span>
+                </div>
+                {showEmojiMenu && <div className="vfx-menu" ref={emojiMenuRef} role="menu">
+                  {KID_FRIENDLY_EMOJIS.map((emoji) => (
+                    <button key={emoji} type="button" className="vfx-button" onClick={() => {
+                      setInput((v) => v + emoji);
+                      setShowEmojiMenu(false);
+                    }} aria-label={`Add ${emoji}`} role="menuitem">{emoji}</button>
+                  ))}
+                </div>}
+              </div>}
+              { (chatCosmetics.vfx === 'coin-vfx' || demoMode) && <div className="vfx-picker">
+                <div className="picker-container">
+                  <button type="button" className="vfx-menu-toggle" onClick={() => {
+                    setShowVfxMenu((open) => !open);
+                    setShowEmojiMenu(false);
+                  }} aria-label="Open effects" aria-expanded={showVfxMenu}>✦</button>
+                  <span className="picker-label">Effect</span>
+                </div>
+                {showVfxMenu && <div className="vfx-menu" ref={vfxMenuRef} role="menu">{VFX_EMOJIS.map(({ emoji, label }) => <button key={emoji} type="button" className="vfx-button" onClick={() => void handleSendVfx(emoji)} disabled={!chatIsLive && !isModerator} aria-label={`Send ${label}`} role="menuitem">{emoji}</button>)}</div>}
+              </div>}
               <button
                 type="submit"
                 className="send-button"

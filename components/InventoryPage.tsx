@@ -1,219 +1,32 @@
 import React from 'react';
 import { supabase } from '../lib/supabaseClient';
-import { avatarItems, avatarItemById, backgroundItems, profileItems, type AvatarItem } from './avatarItems';
+import { avatarItems, avatarItemById } from './avatarItems';
 
-const AVATAR_PREFIXES = ['profile-', 'background-'];
+type ChatSlot = 'glow' | 'tag' | 'stickers' | 'vfx' | 'style';
+const chatSlots: Array<{ slot: ChatSlot; label: string }> = [
+  { slot: 'glow', label: 'Username glow' }, { slot: 'tag', label: 'Chat tag' },
+  { slot: 'stickers', label: 'Sticker set' }, { slot: 'vfx', label: 'Post VFX' }, { slot: 'style', label: 'Chat style' },
+];
+const slotFor = (id: string): ChatSlot | null => id === 'neon-glow' ? 'glow' : id === 'pixel-stickers' ? 'stickers' : id === 'coin-vfx' ? 'vfx' : id === 'cyber-style' ? 'style' : id.startsWith('tag-') ? 'tag' : null;
 
-const isAvatarItem = (id: string) => AVATAR_PREFIXES.some((prefix) => id.startsWith(prefix));
-
-function AvatarPreview({ item }: { item: AvatarItem }) {
-  if (item.kind === 'profile') {
-    return <img className="inventory-avatar-thumb" src={item.src} alt={item.name} loading="lazy" />;
-  }
-  return (
-    <span
-      className="inventory-avatar-thumb inventory-avatar-bg"
-      style={{ backgroundImage: `url(${item.src})` }}
-      role="img"
-      aria-label={item.name}
-    />
-  );
-}
-
-function AvatarCard({
-  item,
-  equippedProfile,
-  equippedBackground,
-  owned,
-  onEquip,
-  onUnequip,
-  busy,
-}: {
-  item: AvatarItem;
-  equippedProfile: string;
-  equippedBackground: string;
-  owned: string[];
-  onEquip: (item: AvatarItem) => void;
-  onUnequip: (item: AvatarItem) => void;
-  busy: string | null;
-}) {
-  const equipped = item.kind === 'profile' ? equippedProfile === item.id : equippedBackground === item.id;
-  const inInventory = owned.includes(item.id);
-  return (
-    <article className="shop-item inventory-card" key={item.id}>
-      <AvatarPreview item={item} />
-      <div className="item-category">{item.kind === 'profile' ? 'Profile picture' : 'Profile background'}</div>
-      <h3>{item.name}</h3>
-      <div className="inventory-actions">
-        {equipped ? (
-          <button onClick={() => onUnequip(item)} disabled={busy === item.id}>Unequip</button>
-        ) : (
-          <button onClick={() => onEquip(item)} disabled={!inInventory || busy === item.id}>
-            {inInventory ? 'Equip' : 'Buy in the shop'}
-          </button>
-        )}
-      </div>
-      {equipped && <div className="equipped-tag">Equipped ✓</div>}
-    </article>
-  );
-}
-
-export function InventoryPage({
-  accountId,
-  demoMode,
-  canManage,
-  onProfileChange,
-}: {
-  accountId: string;
-  demoMode?: boolean;
-  canManage?: boolean;
-  onProfileChange?: (profile: { avatarUrl: string | null; backgroundUrl: string | null }) => void;
-}) {
-  const [owned, setOwned] = React.useState<string[]>([]);
-  const [equippedProfile, setEquippedProfile] = React.useState('');
-  const [equippedBackground, setEquippedBackground] = React.useState('');
-  const [balance, setBalance] = React.useState(demoMode ? 50000 : 650);
+export function InventoryPage({ accountId, demoMode, balance, ownedItems, onOwnedChange, onBalanceChange, onProfileChange, onChatCosmeticsChange }: { accountId: string; demoMode?: boolean; balance: number | null; ownedItems: string[]; onOwnedChange: (items: string[]) => void; onBalanceChange: (balance: number | null) => void; onProfileChange?: (profileId: string, backgroundId: string) => void; onChatCosmeticsChange?: (cosmetics: Record<ChatSlot, string>) => void }) {
+  const [catalog, setCatalog] = React.useState<Record<string, { name: string; emoji: string }>>({});
+  const [equipped, setEquipped] = React.useState<Record<ChatSlot, string>>({ glow: '', tag: '', stickers: '', vfx: '', style: '' });
+  const [profile, setProfile] = React.useState('profile-happy-slime');
+  const [background, setBackground] = React.useState('background-happy-slime');
   const [notice, setNotice] = React.useState('');
   const [busy, setBusy] = React.useState<string | null>(null);
-
-  React.useEffect(() => {
-    if (demoMode) { setBalance(50000); return; }
-    if (accountId) supabase.from('stardust_wallets').select('balance').eq('user_id', accountId).single()
-      .then(({ data }) => { if (data) setBalance(data.balance); });
-    if (accountId) supabase.from('stardust_inventory').select('item_id').eq('user_id', accountId)
-      .then(({ data }) => { if (data) setOwned(data.map((entry) => entry.item_id)); });
-  }, [demoMode, accountId]);
-
-  React.useEffect(() => {
-    if (demoMode || !accountId) return;
-    supabase.from('profiles').select('avatar_url, background_url').eq('id', accountId).single()
-      .then(({ data }) => {
-        if (!data) return;
-        setEquippedProfile(data.avatar_url || '');
-        setEquippedBackground(data.background_url || '');
-      });
-  }, [demoMode, accountId]);
-
-  const saveEquip = async (profileId: string, backgroundId: string) => {
-    if (demoMode || !accountId) return true;
-    const { error } = await supabase.from('profiles').update({
-      avatar_url: profileId || null,
-      background_url: backgroundId || null,
-    }).eq('id', accountId);
-    if (error) { setNotice('Could not save that change. Please try again.'); return false; }
-    return true;
-  };
-
-  const equip = async (item: AvatarItem) => {
-    if (!owned.includes(item.id)) { setNotice(`${item.name} isn't in your inventory yet — buy it in the Stardust Shop.`); return; }
-    setBusy(item.id); setNotice('');
-    const nextProfile = item.kind === 'profile' ? item.id : equippedProfile;
-    const nextBackground = item.kind === 'background' ? item.id : equippedBackground;
-    if (await saveEquip(nextProfile, nextBackground)) {
-      setEquippedProfile(nextProfile);
-      setEquippedBackground(nextBackground);
-      setNotice(`${item.name} equipped!`);
-      onProfileChange?.({
-        avatarUrl: avatarItemById.get(nextProfile)?.src ?? null,
-        backgroundUrl: avatarItemById.get(nextBackground)?.src ?? null,
-      });
-    }
-    setBusy(null);
-  };
-
-  const unequip = async (item: AvatarItem) => {
-    setBusy(item.id); setNotice('');
-    const nextProfile = item.kind === 'profile' ? '' : equippedProfile;
-    const nextBackground = item.kind === 'background' ? '' : equippedBackground;
-    if (await saveEquip(nextProfile, nextBackground)) {
-      setEquippedProfile(nextProfile);
-      setEquippedBackground(nextBackground);
-      setNotice(`${item.name} unequipped.`);
-      onProfileChange?.({
-        avatarUrl: avatarItemById.get(nextProfile)?.src ?? null,
-        backgroundUrl: avatarItemById.get(nextBackground)?.src ?? null,
-      });
-    }
-    setBusy(null);
-  };
-
-  const avatarOwned = owned.filter(isAvatarItem);
-  const ownedCards = avatarItems.filter((item) => avatarOwned.includes(item.id));
-  const missing = avatarItems.filter((item) => !avatarOwned.includes(item.id));
-
-  return (
-    <section className="shop-section inventory-section">
-      <div className="section-heading">
-        <div>
-          <div className="card-kicker">YOUR INVENTORY</div>
-          <h2>Wear your <em>sparkle.</em></h2>
-        </div>
-        <div className="shop-heading-actions">
-          <div className="wallet">✦ <strong>{balance}</strong><span>STARDUST</span></div>
-        </div>
-      </div>
-      <p className="section-copy">Profile pictures and backgrounds you own. Equip one of each to style your profile.</p>
-
-      <div className="inventory-preview-card">
-        <div
-          className="inventory-preview"
-          style={equippedBackground && avatarItemById.get(equippedBackground)
-            ? { backgroundImage: `url(${avatarItemById.get(equippedBackground)!.src})` }
-            : undefined}
-        >
-          {equippedProfile && avatarItemById.get(equippedProfile)
-            ? <img src={avatarItemById.get(equippedProfile)!.src} alt="Your equipped profile picture" />
-            : <span className="inventory-preview-placeholder">No profile picture</span>}
-        </div>
-        <div className="inventory-preview-copy">
-          <div className="card-kicker">CURRENT LOOK</div>
-          <p>{equippedProfile ? avatarItemById.get(equippedProfile)?.name : 'No profile picture equipped'}</p>
-          <p>{equippedBackground ? avatarItemById.get(equippedBackground)?.name : 'No background equipped'}</p>
-        </div>
-      </div>
-
-      <div className="shop-grid">
-        {ownedCards.map((item) => (
-          <AvatarCard
-            key={item.id}
-            item={item}
-            equippedProfile={equippedProfile}
-            equippedBackground={equippedBackground}
-            owned={owned}
-            onEquip={equip}
-            onUnequip={unequip}
-            busy={busy}
-          />
-        ))}
-      </div>
-      {ownedCards.length === 0 && (
-        <p className="inventory-empty">Your inventory is waiting for its first sparkle — visit the Stardust Shop!</p>
-      )}
-
-      {(canManage || demoMode) && missing.length > 0 && (
-        <>
-          <div className="card-kicker inventory-missing-kicker">NOT OWNED YET {canManage ? '· free for staff' : ''}</div>
-          <div className="shop-grid">
-            {missing.map((item) => (
-              <AvatarCard
-                key={item.id}
-                item={item}
-                equippedProfile={equippedProfile}
-                equippedBackground={equippedBackground}
-                owned={owned}
-                onEquip={equip}
-                onUnequip={unequip}
-                busy={busy}
-              />
-            ))}
-          </div>
-        </>
-      )}
-
-      {notice && <div className="shop-notice">{notice}</div>}
-    </section>
-  );
+  React.useEffect(() => { if (!demoMode) supabase.from('stardust_shop').select('id,name,emoji').then(({ data }) => { if (data) setCatalog(Object.fromEntries(data.map((row: any) => [row.id, row]))); }); }, [demoMode]);
+  React.useEffect(() => { if (!demoMode && accountId) supabase.from('profiles').select('avatar_url,background_url,equipped_chat_glow,equipped_chat_tag,equipped_chat_stickers,equipped_chat_vfx,equipped_chat_style').eq('id', accountId).single().then(({ data }) => { if (data) { setProfile(data.avatar_url || 'profile-happy-slime'); setBackground(data.background_url || 'background-happy-slime'); setEquipped({ glow: data.equipped_chat_glow || '', tag: data.equipped_chat_tag || '', stickers: data.equipped_chat_stickers || '', vfx: data.equipped_chat_vfx || '', style: data.equipped_chat_style || '' }); } }); }, [demoMode, accountId]);
+  const save = async (nextProfile: string, nextBackground: string, next: Record<ChatSlot, string>) => { if (demoMode || !accountId) return true; const { error } = await supabase.from('profiles').update({ avatar_url: nextProfile || null, background_url: nextBackground || null, equipped_chat_glow: next.glow || null, equipped_chat_tag: next.tag || null, equipped_chat_stickers: next.stickers || null, equipped_chat_vfx: next.vfx || null, equipped_chat_style: next.style || null }).eq('id', accountId); if (error) { setNotice('Could not save that equipment change.'); return false; } return true; };
+  const change = async (id: string, remove: boolean) => { setBusy(id); setNotice(''); const next = { ...equipped }; const slot = slotFor(id); if (slot) next[slot] = remove ? '' : id; const item = avatarItemById.get(id); const nextProfile = item?.kind === 'profile' ? (remove ? '' : id) : profile; const nextBackground = item?.kind === 'background' ? (remove ? '' : id) : background; if (await save(nextProfile, nextBackground, next)) { setProfile(nextProfile); setBackground(nextBackground); setEquipped(next); onProfileChange?.(nextProfile, nextBackground); onChatCosmeticsChange?.(next); setNotice(`${catalog[id]?.name || item?.name || id} ${remove ? 'unequipped' : 'equipped'}!`); } setBusy(null); };
+  const isEquipped = (id: string) => profile === id || background === id || Object.values(equipped).includes(id);
+  const avatars = avatarItems.filter((item) => ownedItems.includes(item.id));
+  const chatItems = ownedItems.filter((id) => slotFor(id));
+  const profileItem = avatarItemById.get(profile);
+  const backgroundItem = avatarItemById.get(background);
+  return <section className="shop-section inventory-section"><div className="inventory-wallet wallet">✦ <strong>{balance ?? 0}</strong><span>STARDUST</span></div><div className="inventory-preview-card"><div className="inventory-preview" style={backgroundItem ? { backgroundImage: `url(${backgroundItem.src})` } : undefined}>{profileItem ? <img src={profileItem.src} alt="Your equipped profile picture" /> : <span className="inventory-preview-placeholder">No profile picture</span>}</div><div className="inventory-preview-copy"><div className="card-kicker">CURRENT LOOK</div><p>{profileItem?.name || 'No profile picture equipped'}</p><p>{backgroundItem?.name || 'No profile background equipped'}</p></div></div>
+    {avatars.length > 0 && <><div className="card-kicker inventory-group-kicker">PROFILE COSMETICS</div><div className="shop-grid">{avatars.map((item) => <article className="shop-item inventory-card" key={item.id}>{item.kind === 'profile' ? <img className="inventory-avatar-thumb" src={item.src} alt={item.name} /> : <span className="inventory-avatar-thumb inventory-avatar-bg" style={{ backgroundImage: `url(${item.src})` }} role="img" aria-label={item.name} />}<div className="item-category">{item.kind === 'profile' ? 'Profile picture' : 'Profile background'}</div><h3>{item.name}</h3><button onClick={() => change(item.id, isEquipped(item.id))} disabled={busy === item.id}>{isEquipped(item.id) ? 'Unequip' : 'Equip'}</button>{isEquipped(item.id) && <div className="equipped-tag">Equipped ✓</div>}</article>)}</div></>}
+    {chatItems.length > 0 && <><div className="card-kicker inventory-group-kicker">CHAT COSMETICS</div><div className="shop-grid">{chatItems.map((id) => { const item = catalog[id]; const slot = chatSlots.find((entry) => entry.slot === slotFor(id)); return <article className="shop-item inventory-card" key={id}><div className="item-icon">{item?.emoji || '✦'}</div><div className="item-category">{slot?.label || 'Chat'}</div><h3>{item?.name || id}</h3><button onClick={() => change(id, isEquipped(id))} disabled={busy === id}>{isEquipped(id) ? 'Unequip' : 'Equip'}</button>{isEquipped(id) && <div className="equipped-tag">Equipped ✓</div>}</article>; })}</div></>}
+    {ownedItems.length === 0 && <p className="inventory-empty">Your inventory is waiting for its first sparkle — visit the Stardust Shop!</p>}{notice && <div className="shop-notice">{notice}</div>}</section>;
 }
-
-// helpers used by the shop to render avatar items
-export { profileItems, backgroundItems };
