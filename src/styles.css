@@ -12,17 +12,29 @@
 body { margin: 0; min-width: 320px; min-height: 100vh; background: radial-gradient(circle at 50% -10%, #2c271b 0, #10100f 42rem); }
 button, input { font: inherit; }
 .app-shell { width: min(100% - 40px, 900px); margin: 0 auto; padding: 7vh 0 7vh; }
-.site-nav { display: flex; align-items: center; gap: 8px; margin-bottom: 8vh; }
-.nav-tab { padding: 8px 14px; border: 1px solid transparent; border-radius: 8px; color: #77776f; background: transparent; cursor: pointer; font: 11px 'DM Mono', monospace; }
+/* ===== Header bar =====
+   Layout: [brand] [tabs] ......... [actions]
+   Spacing on a 4px scale; 44px control height; one visual group per side. */
+.site-header { position: sticky; top: 0; z-index: 40; margin: -7vh -20px 24px; padding: 0 20px; background: transparent; }
+.site-header-inner { display: flex; align-items: center; gap: 12px; max-width: 1160px; margin: 0 auto; padding: 10px 0; }
+.site-nav { display: flex; align-items: center; gap: 4px; flex: 1 1 auto; min-width: 0; overflow-x: auto; scrollbar-width: none; }
+.site-nav::-webkit-scrollbar { display: none; }
+.site-nav-actions { display: flex; align-items: center; gap: 6px; flex: 0 0 auto; }
+.nav-tab { padding: 8px 13px; border: 1px solid transparent; border-radius: 8px; color: #77776f; background: transparent; cursor: pointer; font: 11px 'DM Mono', monospace; white-space: nowrap; }
 .nav-tab.active { border-color: #454a31; color: #d8ff64; background: #20241b; }
-.nav-account { display: inline-flex; align-items: center; gap: 7px; margin-left: auto; color: #77776f; font: 600 10px 'DM Mono', monospace; }
+.notif-toggle-btn { position: relative; display: inline-flex; align-items: center; justify-content: center; width: 40px; height: 40px; padding: 0; border: 1px solid transparent; border-radius: 10px; color: #9fc7cf; background: transparent; cursor: pointer; transition: color .15s, background .15s; }
+.notif-toggle-btn:hover { color: var(--ptl-yellow); background: #10303a; }
+.notif-toggle-btn[aria-expanded="true"] { color: var(--ptl-yellow); background: #10303a; }
+.notif-bell { width: 20px; height: 20px; }
+.notif-dot { position: absolute; top: -4px; right: -4px; width: 10px; height: 10px; border: 2px solid #0b1216; border-radius: 50%; background: #ff5d5d; }
+.nav-account { display: inline-flex; align-items: center; gap: 7px; color: #77776f; font: 600 10px 'DM Mono', monospace; }
 .nav-profile-art { position: relative; display: block; width: 28px; height: 28px; overflow: hidden; border: 1px solid var(--ptl-cyan); border-radius: 7px; background-position: center; background-size: cover; box-shadow: 0 0 10px #00f5ff55; }
 .nav-profile-art img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; object-position: center bottom; }
-.global-chat-lock { padding: 8px 11px; border: 1px solid #8b5e42; border-radius: 8px; color: #ffc08c; background: #38271f; cursor: pointer; font: 10px 'DM Mono', monospace; }
+.global-chat-lock { padding: 7px 9px; border: 1px solid #8b5e42; border-radius: 8px; color: #ffc08c; background: #38271f; cursor: pointer; font: 10px 'DM Mono', monospace; white-space: nowrap; }
 .global-chat-lock:hover { border-color: #c47b50; background: #493029; }
 .global-chat-lock.global-chat-unlock { border-color: #647b38; color: #191917; background: #d8ff64; }
 .global-chat-lock:disabled { cursor: wait; opacity: .6; }
-.global-chat-notice { margin: -8vh 0 8vh; color: #b9ce73; text-align: right; font: 10px 'DM Mono', monospace; }
+.global-chat-notice { margin: -16px 0 24px; color: #b9ce73; text-align: right; font: 10px 'DM Mono', monospace; }
 .mini-chat { position: fixed; z-index: 30; right: 24px; bottom: 22px; width: min(330px, calc(100vw - 32px)); border: 1px solid #454a31; border-radius: 14px; background: #191917; box-shadow: 0 15px 45px #000b; overflow: visible; }
 .mini-chat-launcher { display: flex; align-items: center; gap: 9px; width: 100%; padding: 12px 15px; border: 0; color: #d8ff64; background: #20241b; cursor: pointer; font: 11px 'DM Mono', monospace; text-align: left; border-radius: 14px; }
 .mini-chat-bubble { display: grid; width: 24px; height: 24px; place-items: center; border-radius: 50%; color: #191917; background: #d8ff64; }
@@ -53,7 +65,7 @@ button, input { font: inherit; }
 .mini-chat-menu .menu-grid button:hover { background: #292925; border-color: #d8ff64; }
 .hero { margin-bottom: 34px; }
 .chat-page-shell { padding-top: 24px; padding-bottom: 24px; }
-.chat-page-shell .site-nav { margin-bottom: 16px; }
+.chat-page-shell .site-header { margin-bottom: 16px; }
 .chat-page-title { margin-bottom: 13px; }
 .chat-page-title h1 { margin: 0; font-size: clamp(30px, 4vw, 42px); line-height: 1; }
 .chat-page-shell .messages { height: clamp(240px, calc(100dvh - 440px), 440px); min-height: 0; max-height: none; gap: 10px; padding: 14px 18px; }
@@ -378,8 +390,8 @@ body {
 }
 
 .app-shell { position: relative; }
-.site-nav { gap: 7px; }
-.brand-mark { display: grid; flex: 0 0 45px; width: 45px; height: 45px; margin-right: 8px; padding: 0; place-items: center; border: 1px solid #1f6878; border-radius: 50%; background: #07141d; box-shadow: 0 0 18px #00f5ff22; cursor: pointer; overflow: hidden; }
+.site-nav { gap: 4px; margin-right: 0; }
+.brand-mark { display: grid; flex: 0 0 40px; width: 40px; height: 40px; margin-right: 4px; padding: 0; place-items: center; border: none; border-radius: 12px; background: transparent; box-shadow: none; cursor: pointer; overflow: hidden; }
 .brand-mark img { width: 100%; height: 100%; object-fit: cover; }
 .nav-tab { color: #71929b; }
 .nav-tab.active { border-color: #16899a; color: var(--ptl-yellow); background: #10303a; box-shadow: inset 0 0 16px #00f5ff10; }

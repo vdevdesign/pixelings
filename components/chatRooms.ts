@@ -1,4 +1,5 @@
 export const CHAT_ROOMS = [
+  'Teacher Lounge',
   'Blender',
   'Tinkercad',
   'E-Sports',

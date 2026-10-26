@@ -261,6 +261,38 @@ alter table public.profiles drop constraint if exists profiles_username_check;
 
 -- Child accounts use a first-name username and a teacher-issued code. Store only
 -- a bcrypt hash; the shared classroom email is the front door, not a password.
+
+-- FRAMEWORK FOR FUTURE ACCOUNT CLAIMING:
+-- When moving to individual logins, users will 'claim' their profile using:
+-- 1. Their original access code
+-- 2. Their username
+-- This function marks a profile as 'claimed' and links it to a new auth.uid().
+create or replace function public.claim_child_profile(child_name text, child_code text, new_user_id uuid)
+returns boolean language plpgsql security definer set search_path = public
+as $$
+declare
+  profile_id uuid;
+begin
+  select p.id into profile_id
+    from public.profiles p
+    where p.role = 'computer'
+      and lower(p.username) = lower(trim(child_name))
+      and crypt(child_code, p.access_code_hash) = p.access_code_hash;
+
+  if profile_id is null then
+    return false;
+  end if;
+
+  -- Update the profile to the new auth user and clear the access code as it's no longer needed
+  update public.profiles
+    set id = new_user_id,
+        access_code_hash = null
+    where id = profile_id;
+
+  return true;
+end;
+$$;
+
 create or replace function public.verify_child_login(child_name text, child_code text)
 returns table (id uuid, username text, approved_nickname text)
 language plpgsql security definer set search_path = public
@@ -270,9 +302,9 @@ begin
     select p.id, p.username, p.approved_nickname
     from public.profiles p
     where p.role = 'computer'
-      and lower(p.username) = lower(trim(child_name))
       and p.access_code_hash is not null
-      and crypt(child_code, p.access_code_hash) = p.access_code_hash;
+      and crypt(child_code, p.access_code_hash) = p.access_code_hash
+      and (child_name is null or lower(p.username) = lower(trim(child_name)));
 end;
 $$;
 
@@ -284,6 +316,8 @@ create table if not exists public.messages (
   sender_username text,
   content text not null check (char_length(content) between 1 and 1000),
   is_whisper boolean not null default false,
+  is_broadcast boolean not null default false,
+  is_priority boolean not null default false,
   recipient_id uuid,
   created_at timestamptz not null default now(),
   status text not null default 'pending' check (status in ('pending', 'approved', 'rejected')),

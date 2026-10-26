@@ -7,6 +7,12 @@ import { avatarItemById, profileItems } from './avatarItems';
 const PIXEL_STICKERS = ['✨', '🎉', '🧪', '🔥'];
 const COIN_EMOJI = '\u{1FA99}';
 const VFX_EMOJIS = [{ emoji: COIN_EMOJI, label: 'Coin burst' }];
+const QUICK_NEEDS = [
+  { label: 'Bathroom', emoji: '🚽', message: 'I need to use the restroom' },
+  { label: 'Water/Snack', emoji: '🍎', message: 'I am hungry or thirsty' },
+  { label: 'Help', emoji: '🆘', message: 'I need help' },
+  { label: 'Break', emoji: '🎧', message: 'I need a sensory break' },
+];
 const KID_FRIENDLY_EMOJIS = [
   '😀', '😂', '😊', '😇', '😎', '🤩', '🥳', '🥺', '😭', '😱',
   '❤️', '✨', '🌟', '🔥', '🌈', '☀️', '🌙', '☁️', '⚡', '❄️',
@@ -65,6 +71,35 @@ export const PixelingsChat: React.FC<ChatProps> = ({
   currentProfile = { avatarUrl: 'profile-happy-slime', backgroundUrl: 'background-happy-slime' },
   externalState,
 }) => {
+  // Block non-teachers from the Teacher Lounge
+  if (room === 'Teacher Lounge' && !isModerator && !isAdmin) {
+    return (
+      <div className="chat-error-screen">
+        <div className="error-card">
+          <h2>🚫 Access Denied</h2>
+          <p>The Teacher Lounge is for staff only.</p>
+          <button onClick={() => onRoomChange('Blender')}>Return to Class</button>
+        </div>
+        <style>{`
+          .chat-error-screen { 
+            display: flex; align-items: center; justify-content: center; 
+            height: 100%; background: #f8f9fa; color: #333; 
+          }
+          .error-card { 
+            text-align: center; padding: 3rem; background: white; 
+            border-radius: 20px; box-shadow: 0 10px 25px rgba(0,0,0,0.1); 
+          }
+          .error-card h2 { color: #d32f2f; margin-bottom: 1rem; }
+          .error-card p { margin-bottom: 2rem; color: #666; }
+          .error-card button { 
+            padding: 0.8rem 1.5rem; background: #4CAF50; color: white; 
+            border: none; border-radius: 8px; cursor: pointer; font-weight: bold;
+          }
+        `}</style>
+      </div>
+    );
+  }
+
   const messagesContainerRef = React.useRef<HTMLDivElement>(null);
   const vfxMenuRef = React.useRef<HTMLDivElement>(null);
   const emojiMenuRef = React.useRef<HTMLDivElement>(null);
@@ -84,6 +119,7 @@ export const PixelingsChat: React.FC<ChatProps> = ({
   const [nicknameDraft, setNicknameDraft] = React.useState(currentUsername);
   const [nicknameNotice, setNicknameNotice] = React.useState('');
   const [showModeration, setShowModeration] = React.useState(false);
+  const [showQuickNeeds, setShowQuickNeeds] = React.useState(false);
   const [lockReasonDraft, setLockReasonDraft] = React.useState('Class chat is paused while we reset the room.');
   const [statusNotice, setStatusNotice] = React.useState('');
   const [openUsername, setOpenUsername] = React.useState<string | null>(null);
@@ -126,20 +162,39 @@ export const PixelingsChat: React.FC<ChatProps> = ({
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  const handleSend = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!input.trim() || (!chatIsLive && !isModerator)) return;
+  const handleSend = async (e: React.FormEvent, options: { isBroadcast?: boolean; isPriority?: boolean } = {}) => {
+    if (e) e.preventDefault();
+    const text = options.isBroadcast ? `📢 BROADCAST: ${input}` : input;
+    if (!text?.trim() || (!chatIsLive && !isModerator)) return;
 
     try {
+      // Note: The sendMessage hook needs to be updated to accept these new flags
       await sendMessage(
-        input, 
+        text, 
         whisperTarget.trim() ? whisperTarget : undefined, 
-        liveUsername
+        liveUsername,
+        options.isBroadcast,
+        options.isPriority
       );
       setInput('');
     } catch (err) {
       console.error('Failed to send message:', err);
       setStatusNotice(err instanceof Error ? err.message : 'Could not send that message.');
+    }
+  };
+
+  const handleQuickNeed = async (need: typeof QUICK_NEEDS[0]) => {
+    setShowQuickNeeds(false);
+    try {
+      await sendMessage(
+        `🆘 ${need.emoji} ${need.message}`, 
+        undefined, 
+        liveUsername,
+        false,
+        true // isPriority = true
+      );
+    } catch (err) {
+      setStatusNotice('Could not send the request.');
     }
   };
 

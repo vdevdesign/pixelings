@@ -8,6 +8,9 @@ import { RuneDuelMatch } from '../components/RuneDuelMatch';
 import { MiniChat } from '../components/MiniChat';
 import { PtlPosts } from '../components/PtlPosts';
 import { ChatRoom } from '../components/chatRooms';
+import { AccessCodeLogin } from '../components/AccessCodeLogin';
+import { TeacherDashboard } from '../components/TeacherDashboard';
+import { TeacherNotificationCenter } from '../components/TeacherNotificationCenter';
 import { avatarItemById, profileItems } from '../components/avatarItems';
 import { supabase } from '../lib/supabaseClient';
 import './styles.css';
@@ -38,12 +41,18 @@ function App() {
   const [chatCosmetics, setChatCosmetics] = React.useState({ glow: '', tag: '', stickers: '', vfx: '', style: '' });
   const [loginError, setLoginError] = React.useState('');
   const [failedStaffAttempts, setFailedStaffAttempts] = React.useState(0);
+  const [failedKidAttempts, setFailedKidAttempts] = React.useState(0);
+  const [lockoutUntil, setLockoutUntil] = React.useState<number | null>(null);
   const [resetMode, setResetMode] = React.useState(false);
   const [newPassword, setNewPassword] = React.useState('');
   const [confirmPassword, setConfirmPassword] = React.useState('');
   const [resetNotice, setResetNotice] = React.useState('');
   const [activeTab, setActiveTab] = React.useState<'home' | 'chat' | 'games' | 'shop' | 'inventory'>('home');
   const [chatRoom, setChatRoom] = React.useState<ChatRoom>('Blender');
+  const [showStudentManager, setShowStudentManager] = React.useState(false);
+  const [showNotifications, setShowNotifications] = React.useState(false);
+  const [unreadAlertCount, setUnreadAlertCount] = React.useState(0);
+  const [lastActivity, setLastActivity] = React.useState<number>(Date.now());
   // Durable Stardust wallet + inventory, loaded once per authenticated session
   // and shared across the shop and inventory tabs so purchases survive tab switches.
   const [walletBalance, setWalletBalance] = React.useState<number | null>(null);
@@ -119,6 +128,32 @@ function App() {
     return () => authListener.subscription.unsubscribe();
   }, []);
 
+  // Auto-timeout: Sign out after 30 minutes of inactivity
+  React.useEffect(() => {
+    if (!loggedIn) return;
+    const interval = setInterval(() => {
+      const now = Date.now();
+      if (now - lastActivity > 30 * 60 * 1000) {
+        void supabase.auth.signOut();
+        setLoggedIn(false);
+      }
+    }, 60000); // Check every minute
+    return () => clearInterval(interval);
+  }, [loggedIn, lastActivity]);
+
+  // Global activity tracker
+  React.useEffect(() => {
+    const updateActivity = () => setLastActivity(Date.now());
+    window.addEventListener('mousemove', updateActivity);
+    window.addEventListener('keydown', updateActivity);
+    window.addEventListener('click', updateActivity);
+    return () => {
+      window.removeEventListener('mousemove', updateActivity);
+      window.removeEventListener('keydown', updateActivity);
+      window.removeEventListener('click', updateActivity);
+    };
+  }, []);
+
   // Load wallet + inventory once per authenticated session. Kept at the app
   // level so purchases persist across tab switches (shop <-> inventory).
   React.useEffect(() => {
@@ -134,6 +169,14 @@ function App() {
 
   const handleLogin = async () => {
     setLoginError('');
+
+    // Check for account lockout
+    if (lockoutUntil && Date.now() < lockoutUntil) {
+      const remaining = Math.ceil((lockoutUntil - Date.now()) / 1000 / 60);
+      setLoginError(`Too many failed attempts. Please try again in ${remaining} minute${remaining === 1 ? '' : 's'}.`);
+      return;
+    }
+
     if (!email.trim() || !email.includes('@') || !emailPassword) {
       setLoginError('Enter a valid email address and password.');
       return;
@@ -162,19 +205,37 @@ function App() {
       setLoginError('Enter your first name and the code your teacher gave you.');
       return;
     }
+
+    // Verify Kid Login
+    const { data: child, error } = await supabase.rpc('verify_child_login', {
+      child_name: firstName.trim(),
+      child_code: accessCode.trim(),
+    });
+
+    const selectedChild = Array.isArray(child) ? child[0] : child;
+
+    if (error || !selectedChild) {
+      const newAttempts = failedKidAttempts + 1;
+      setFailedKidAttempts(newAttempts);
+      if (newAttempts >= 5) {
+        setLockoutUntil(Date.now() + 5 * 60 * 1000); // Lock for 5 minutes
+        setFailedKidAttempts(0);
+      }
+      setLoginError('That first name and code were not recognized.');
+      return;
+    }
+
+    // Success: Clear failures
+    setFailedKidAttempts(0);
+    setLockoutUntil(null);
+
+    // Ensure we are authenticated with the shared account before finalizing profile
     const { data: classroom, error: classroomError } = await supabase.auth.signInWithPassword({
       email: email.trim().toLowerCase(),
       password: emailPassword,
     });
     if (classroomError || !classroom.user) { setLoginError('That classroom email or password was not recognized.'); return; }
-    // The shared kids address identifies the classroom. The child code identifies
-    // the individual profile and keeps each child’s Stardust separate.
-    const { data: child, error } = await supabase.rpc('verify_child_login', {
-      child_name: firstName.trim(),
-      child_code: accessCode.trim(),
-    });
-    const selectedChild = Array.isArray(child) ? child[0] : child;
-    if (error || !selectedChild) { setLoginError('That first name and code were not recognized.'); return; }
+
     setAuthUserId(classroom.user.id);
     setUserId(selectedChild.id);
     setComputer(selectedChild.username);
@@ -187,6 +248,21 @@ function App() {
     setIsTeacher(false);
     setIsInstantPreview(false);
       setLoggedIn(true);
+  };
+
+  const handleStaffLogin = async () => {
+    setLoginError('');
+    if (!email.trim() || !email.includes('@') || !emailPassword) {
+      setLoginError('Enter a valid email address and password.');
+      return;
+    }
+    const { data, error } = await supabase.auth.signInWithPassword({
+      email: email.trim().toLowerCase(),
+      password: emailPassword,
+    });
+    if (error || !data.user) { setFailedStaffAttempts((attempts) => attempts + 1); setLoginError('That work email or password was not recognized.'); return; }
+    setAuthUserId(data.user.id);
+    void loadAuthenticatedUser(data);
   };
 
   const toggleAllChats = async () => {
@@ -231,6 +307,15 @@ function App() {
     const { error } = await supabase.auth.resetPasswordForEmail(email.trim().toLowerCase(), { redirectTo: window.location.origin });
     if (error) { setLoginError('We could not send the password reset email.'); return; }
     setResetNotice('Password reset link sent. Check your email.');
+  };
+
+  // Handle navigation to Student Manager
+  const openStudentManager = () => {
+    if (!isTeacher) {
+      setLoginError('Only teachers can access the student manager.');
+      return;
+    }
+    setShowStudentManager(true);
   };
 
   const saveNewPassword = async (event: React.FormEvent) => {
@@ -360,136 +445,167 @@ function App() {
 
   return (
     <main className={`app-shell ${activeTab === 'chat' ? 'chat-page-shell' : ''}`}>
-      <nav className="site-nav" aria-label="Primary navigation">
-        <button className="brand-mark" type="button" onClick={() => setActiveTab('home')} aria-label="Go to Pixels Tech Lab home">
-          <img src={logoSrc} alt="Pixels Tech Lab" />
-        </button>
-        <button className={`nav-tab ${activeTab === 'home' ? 'active' : ''}`} onClick={() => setActiveTab('home')}>Home</button>
-        <button className={`nav-tab ${activeTab === 'chat' ? 'active' : ''}`} onClick={() => setActiveTab('chat')}>Chat</button>
-        <button className={`nav-tab ${activeTab === 'games' ? 'active' : ''}`} onClick={() => setActiveTab('games')}>Mini Games</button>
-        <button className={`nav-tab ${activeTab === 'shop' ? 'active' : ''}`} onClick={() => setActiveTab('shop')}>Stardust Shop</button>
-        <button className={`nav-tab ${activeTab === 'inventory' ? 'active' : ''}`} onClick={() => setActiveTab('inventory')}>My Inventory</button>
-        {isTeacher && <button className={`global-chat-lock ${allChatsLocked ? 'global-chat-unlock' : ''}`} onClick={toggleAllChats} disabled={changingAllChats}>
-          {changingAllChats ? 'Updating…' : allChatsLocked ? 'Unlock all chats' : 'Lock all chats'}
-        </button>}
-        <span className="nav-account"><span className="nav-profile-art" style={{ backgroundImage: `url(${avatarItemById.get(profileBackgroundId)?.src || avatarItemById.get('background-happy-slime')?.src})` }}>{(avatarItemById.get(profileAvatarId) || avatarItemById.get('profile-happy-slime') || profileItems[0]) && <img src={(avatarItemById.get(profileAvatarId) || avatarItemById.get('profile-happy-slime') || profileItems[0])!.src} alt="" />}</span>{approvedNickname || computer}</span>
-        <button className="logout-button" type="button" onClick={handleLogout}>Log out</button>
-      </nav>
+      <header className="site-header">
+        <div className="site-header-inner">
+          <button className="brand-mark" type="button" onClick={() => { setActiveTab('home'); setShowStudentManager(false); }} aria-label="Go to Pixels Tech Lab home">
+            <img src={logoSrc} alt="Pixels Tech Lab" />
+          </button>
+          <nav className="site-nav" aria-label="Primary navigation">
+            <button className={`nav-tab ${activeTab === 'home' && !showStudentManager ? 'active' : ''}`} onClick={() => { setActiveTab('home'); setShowStudentManager(false); }}>Home</button>
+            <button className={`nav-tab ${activeTab === 'chat' && !showStudentManager ? 'active' : ''}`} onClick={() => { setActiveTab('chat'); setShowStudentManager(false); }}>Chat</button>
+            <button className={`nav-tab ${activeTab === 'games' && !showStudentManager ? 'active' : ''}`} onClick={() => { setActiveTab('games'); setShowStudentManager(false); }}>Games</button>
+            <button className={`nav-tab ${activeTab === 'shop' && !showStudentManager ? 'active' : ''}`} onClick={() => { setActiveTab('shop'); setShowStudentManager(false); }}>Stardust Shop</button>
+            <button className={`nav-tab ${activeTab === 'inventory' && !showStudentManager ? 'active' : ''}`} onClick={() => { setActiveTab('inventory'); setShowStudentManager(false); }}>Inventory</button>
+            {isTeacher && <button className={`nav-tab ${showStudentManager ? 'active' : ''}`} onClick={() => setShowStudentManager(!showStudentManager)}>Students</button>}
+          </nav>
+          <div className="site-nav-actions">
+            {isTeacher && <button className="global-chat-lock" onClick={toggleAllChats} disabled={changingAllChats}>
+              {changingAllChats ? 'Updating…' : allChatsLocked ? 'Unlock chats' : 'Lock chats'}
+            </button>}
+            {isTeacher && <button className="notif-toggle-btn" onClick={() => setShowNotifications(!showNotifications)} title="Priority Alerts" aria-label={`Priority alerts${unreadAlertCount > 0 ? `, ${unreadAlertCount} unread` : ''}`} aria-expanded={showNotifications}>
+              <svg className="notif-bell" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false">
+                <path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9" />
+                <path d="M13.73 21a2 2 0 0 1-3.46 0" />
+              </svg>
+              {unreadAlertCount > 0 && <span className="notif-dot" aria-hidden="true"></span>}
+            </button>}
+            <span className="nav-account">
+              <span className="nav-profile-art" style={{ backgroundImage: `url(${avatarItemById.get(profileBackgroundId)?.src || avatarItemById.get('background-happy-slime')?.src})` }}>
+                <img src={(avatarItemById.get(profileAvatarId) || avatarItemById.get('profile-happy-slime') || profileItems[0])!.src} alt="" />
+              </span>
+              {approvedNickname || computer}
+            </span>
+            <button className="logout-button" type="button" onClick={handleLogout}>Log out</button>
+          </div>
+        </div>
+      </header>
+      
+      
+      {isTeacher && showNotifications && <div className="teacher-alerts-container" style={{ position: 'fixed', top: '80px', right: '20px', zIndex: 100 }}>
+        <TeacherNotificationCenter onUnreadChange={setUnreadAlertCount} />
+      </div>}
+
       {chatLockNotice && <p className="global-chat-notice" role="status">{chatLockNotice}</p>}
-      {activeTab === 'home' ? <>
-      <section className="hero home-hero">
-        <h1>Welcome <em>Pixelings!</em></h1>
-        <p className="hero-copy">A cozy little corner to chat and spend your Stardust.</p>
-      </section>
-      <section className="home-grid">
-        <article className="welcome-card feature-card">
-          <div className="card-kicker">TODAY IN THE LOUNGE</div>
-          <h2>Make something <em>sparkle.</em></h2>
-          <p>Drop into chat or show off your collection in the Stardust Shop.</p>
-          <button className="primary-action" onClick={() => setActiveTab('chat')}>Open the chat →</button>
-        </article>
-      </section>
-      <section className="home-section">
-        <div className="section-heading home-section-heading">
-          <div>
-            <div className="card-kicker">PIXELS TECH LAB</div>
-            <h2>PTL <em>News</em></h2>
-          </div>
-          <span className="section-label">LATEST UPDATES</span>
-        </div>
-        <p className="section-copy">Short updates, announcements, and useful things happening around Pixels Tech Lab.</p>
-        <div className="legacy-static"><div className="news-grid">
-          <article className="news-card">
-            <div className="news-meta">LAB NOTE · OCT 14, 2026</div>
-            <h3>Welcome to the new Pixelings lounge</h3>
-            <p>Chat, share what you are building, and keep an eye on this space for new lab updates.</p>
-          </article>
-          <article className="news-card">
-            <div className="news-meta">COMING SOON</div>
-            <h3>More ways to show your work</h3>
-            <p>We are planning new ways for Pixelings to spotlight projects, ideas, and creative experiments.</p>
-          </article>
-        </div></div>
-        <PtlPosts section="news" canEdit={isTeacher && Boolean(authUserId)} userId={authUserId} />
-      </section>
-      <section className="home-section tales-section">
-        <div className="section-heading home-section-heading">
-          <div>
-            <div className="card-kicker">BEHIND THE BUILD</div>
-            <h2>Tales from the <em>Tech Lab</em></h2>
-          </div>
-          <span className="section-label">STORIES & SPOTLIGHTS</span>
-        </div>
-        <p className="section-copy">A home for behind-the-scenes stories, project spotlights, creative lessons, and the people who make the lab interesting.</p>
-        <div className="legacy-static"><div className="story-card">
-          <div className="story-icon">✦</div>
-          <div>
-            <div className="news-meta">THE IDEA BEHIND THE SECTION</div>
-            <h3>Show the messy, clever, human side of making things.</h3>
-            <p>Tales can feature a Pixelings project, a quick lesson learned, an interview, or a peek at how something in the lab came together.</p>
-          </div>
-        </div></div>
-        <PtlPosts section="tales" canEdit={isTeacher && Boolean(authUserId)} userId={authUserId} />
-      </section>
-      </>
-      : activeTab === 'chat' ? <>
-      <section className="chat-page-title">
-        <h1>Pixelings <em>Chat</em></h1>
-      </section>
-      <PixelingsChat 
-        room={chatRoom} 
-        onRoomChange={setChatRoom} 
-        currentUserId={userId} 
-        currentUsername={approvedNickname || computer} 
-        currentUsernameHandle={computer} 
-        currentProfile={{ avatarUrl: profileAvatarId, backgroundUrl: profileBackgroundId }} 
-        chatCosmetics={chatCosmetics} 
-        isAdmin={isTeacher || role !== 'computer'} 
-        isModerator={isTeacher || role !== 'computer'} 
-        demoMode={isInstantPreview} 
-        allChatsLocked={allChatsLocked} 
-        manualChatOverride={manualChatOverrides[chatRoom]} 
-        onManualStatusChange={(live) => setManualChatOverrides((overrides) => ({ ...overrides, [chatRoom]: live }))}
-        externalState={{
-          messages: sharedMessages,
-          setMessages: setSharedMessages,
-          isLive: sharedIsLive,
-          setIsLive: setSharedIsLive,
-          loading: sharedLoading,
-          setLoading: setSharedLoading
-        }}
-      />
-      <p className="demo-note">Preview mode · moderation is required for flagged messages</p>
-      </>
-      : activeTab === 'games' ? <>
-        <section className="hero"><h1>Mini <em>Games</em></h1><p className="hero-copy">Take a quick break, test your memory, and collect a little Stardust.</p></section>
-        <RuneDuelMatch />
-        <MiniTrivia userId={userId} demoMode={isInstantPreview} />
-      </>
-      : activeTab === 'inventory' ? <>
-        <section className="hero"><h1>My <em>Inventory</em></h1><p className="hero-copy">Equip your profile picture and chat cosmetics from everything you own.</p></section>
-        <InventoryPage accountId={authUserId} demoMode={isInstantPreview} balance={walletBalance} ownedItems={ownedItems} onOwnedChange={setOwnedItems} onBalanceChange={setWalletBalance} onProfileChange={(avatarId, backgroundId) => { setProfileAvatarId(avatarId); setProfileBackgroundId(backgroundId); }} onChatCosmeticsChange={setChatCosmetics} />
-      </>
-      : <>
-        <section className="hero"><h1>Stardust <em>Shop</em></h1><p className="hero-copy">Spend your sparkle on chat upgrades, identity flexes, and delightful chaos.</p></section>
-        <StardustShop accountId={authUserId} demoMode={isInstantPreview} canManage={isTeacher} balance={walletBalance} ownedItems={ownedItems} onOwnedChange={setOwnedItems} onBalanceChange={setWalletBalance} />
-      </>}
-      {activeTab !== 'chat' && <MiniChat 
-        room={chatRoom} 
-        onRoomChange={setChatRoom} 
-        userId={userId} 
-        username={approvedNickname || computer} 
-        chatCosmetics={chatCosmetics} 
-        demoMode={isInstantPreview}
-        externalState={{
-          messages: sharedMessages,
-          setMessages: setSharedMessages,
-          isLive: sharedIsLive,
-          setIsLive: setSharedIsLive,
-          loading: sharedLoading,
-          setLoading: setSharedLoading
-        }}
-      />}
+      {showStudentManager ? (
+        <TeacherDashboard />
+      ) : (
+        <>
+          {activeTab === 'home' ? <>
+          <section className="hero home-hero">
+            <h1>Welcome <em>Pixelings!</em></h1>
+            <p className="hero-copy">A cozy little corner to chat and spend your Stardust.</p>
+          </section>
+          <section className="home-grid">
+            <article className="welcome-card feature-card">
+              <div className="card-kicker">TODAY IN THE LOUNGE</div>
+              <h2>Make something <em>sparkle.</em></h2>
+              <p>Drop into chat or show off your collection in the Stardust Shop.</p>
+              <button className="primary-action" onClick={() => setActiveTab('chat')}>Open the chat →</button>
+            </article>
+          </section>
+          <section className="home-section">
+            <div className="section-heading home-section-heading">
+              <div>
+                <div className="card-kicker">PIXELS TECH LAB</div>
+                <h2>PTL <em>News</em></h2>
+              </div>
+              <span className="section-label">LATEST UPDATES</span>
+            </div>
+            <p className="section-copy">Short updates, announcements, and useful things happening around Pixels Tech Lab.</p>
+            <div className="legacy-static"><div className="news-grid">
+              <article className="news-card">
+                <div className="news-meta">LAB NOTE · OCT 14, 2026</div>
+                <h3>Welcome to the new Pixelings lounge</h3>
+                <p>Chat, share what you are building, and keep an eye on this space for new lab updates.</p>
+              </article>
+              <article className="news-card">
+                <div className="news-meta">COMING SOON</div>
+                <h3>More ways to show your work</h3>
+                <p>We are planning new ways for Pixelings to spotlight projects, ideas, and creative experiments.</p>
+              </article>
+            </div></div>
+            <PtlPosts section="news" canEdit={isTeacher && Boolean(authUserId)} userId={authUserId} />
+          </section>
+          <section className="home-section tales-section">
+            <div className="section-heading home-section-heading">
+              <div>
+                <div className="card-kicker">BEHIND THE BUILD</div>
+                <h2>Tales from the <em>Tech Lab</em></h2>
+              </div>
+              <span className="section-label">STORIES & SPOTLIGHTS</span>
+            </div>
+            <p className="section-copy">A home for behind-the-scenes stories, project spotlights, creative lessons, and the people who make the lab interesting.</p>
+            <div className="legacy-static"><div className="story-card">
+              <div className="story-icon">✦</div>
+              <div>
+                <div className="news-meta">THE IDEA BEHIND THE SECTION</div>
+                <h3>Show the messy, clever, human side of making things.</h3>
+                <p>Tales can feature a Pixelings project, a quick lesson learned, an interview, or a peek at how something in the lab came together.</p>
+              </div>
+            </div></div>
+            <PtlPosts section="tales" canEdit={isTeacher && Boolean(authUserId)} userId={authUserId} />
+          </section>
+          </>
+          : activeTab === 'chat' ? <>
+          <section className="chat-page-title">
+            <h1>Pixelings <em>Chat</em></h1>
+          </section>
+          <PixelingsChat 
+            room={chatRoom} 
+            onRoomChange={setChatRoom} 
+            currentUserId={userId} 
+            currentUsername={approvedNickname || computer} 
+            currentUsernameHandle={computer} 
+            currentProfile={{ avatarUrl: profileAvatarId, backgroundUrl: profileBackgroundId }} 
+            chatCosmetics={chatCosmetics} 
+            isAdmin={isTeacher || role !== 'computer'} 
+            isModerator={isTeacher || role !== 'computer'} 
+            demoMode={isInstantPreview} 
+            allChatsLocked={allChatsLocked} 
+            manualChatOverride={manualChatOverrides[chatRoom]} 
+            onManualStatusChange={(live) => setManualChatOverrides((overrides) => ({ ...overrides, [chatRoom]: live }))}
+            externalState={{
+              messages: sharedMessages,
+              setMessages: setSharedMessages,
+              isLive: sharedIsLive,
+              setIsLive: setSharedIsLive,
+              loading: sharedLoading,
+              setLoading: setSharedLoading
+            }}
+          />
+          <p className="demo-note">Preview mode · moderation is required for flagged messages</p>
+          </>
+          : activeTab === 'games' ? <>
+            <section className="hero"><h1>Mini <em>Games</em></h1><p className="hero-copy">Take a quick break, test your memory, and collect a little Stardust.</p></section>
+            <RuneDuelMatch />
+            <MiniTrivia userId={userId} demoMode={isInstantPreview} />
+          </>
+          : activeTab === 'inventory' ? <>
+            <section className="hero"><h1>My <em>Inventory</em></h1><p className="hero-copy">Equip your profile picture and chat cosmetics from everything you own.</p></section>
+            <InventoryPage accountId={authUserId} demoMode={isInstantPreview} balance={walletBalance} ownedItems={ownedItems} onOwnedChange={setOwnedItems} onBalanceChange={setWalletBalance} onProfileChange={(avatarId, backgroundId) => { setProfileAvatarId(avatarId); setProfileBackgroundId(backgroundId); }} onChatCosmeticsChange={setChatCosmetics} />
+          </>
+          : <>
+            <section className="hero"><h1>Stardust <em>Shop</em></h1><p className="hero-copy">Spend your sparkle on chat upgrades, identity flexes, and delightful chaos.</p></section>
+            <StardustShop accountId={authUserId} demoMode={isInstantPreview} canManage={isTeacher} balance={walletBalance} ownedItems={ownedItems} onOwnedChange={setOwnedItems} onBalanceChange={setWalletBalance} />
+          </>}
+          {activeTab !== 'chat' && <MiniChat 
+            room={chatRoom} 
+            onRoomChange={setChatRoom} 
+            userId={userId} 
+            username={approvedNickname || computer} 
+            chatCosmetics={chatCosmetics} 
+            demoMode={isInstantPreview}
+            externalState={{
+              messages: sharedMessages,
+              setMessages: setSharedMessages,
+              isLive: sharedIsLive,
+              setIsLive: setSharedIsLive,
+              loading: sharedLoading,
+              setLoading: setSharedLoading
+            }}
+          />}
+        </>
+      )}
     </main>
   );
 }

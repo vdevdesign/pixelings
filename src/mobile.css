@@ -9,20 +9,28 @@
     padding: 24px 0 112px;
   }
 
-  .site-nav {
+  .site-header-inner {
     flex-wrap: nowrap;
+    gap: 8px;
+  }
+
+  .site-nav {
+    flex: 1 1 auto;
     gap: 4px;
-    margin: 0 -6px 44px;
     padding: 0 6px 6px;
     overflow-x: auto;
     scrollbar-width: none;
   }
 
+  .site-nav-actions {
+    gap: 6px;
+  }
+
   .brand-mark {
-    flex-basis: 40px;
+    flex: 0 0 40px;
     width: 40px;
     height: 40px;
-    margin-right: 4px;
+    margin-right: 0;
   }
 
   .login-logo {
