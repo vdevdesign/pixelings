@@ -13,6 +13,19 @@ const QUICK_NEEDS = [
   { label: 'Help', emoji: '🆘', message: 'I need help' },
   { label: 'Break', emoji: '🎧', message: 'I need a sensory break' },
 ];
+// Chat themes map an owned shop item (equipped as the chat 'style' slot) to a
+// class applied on the chat card. Classic is always available and needs no
+// purchase; every other theme is a Stardust Shop item.
+const CHAT_THEMES = [
+  { id: '', name: 'Classic', emoji: '◆' },
+  { id: 'cyber-style', name: 'Cyberpunk', emoji: '⌁' },
+  { id: 'style-pastel-dream', name: 'Pastel Dream', emoji: '☁' },
+  { id: 'style-forest-grove', name: 'Forest Grove', emoji: '☘' },
+  { id: 'style-sunset-vibes', name: 'Sunset Vibes', emoji: '☀' },
+  { id: 'style-deep-space', name: 'Deep Space', emoji: '✦' },
+  { id: 'style-candy-pop', name: 'Candy Pop', emoji: '♡' },
+];
+
 const KID_FRIENDLY_EMOJIS = [
   '😀', '😂', '😊', '😇', '😎', '🤩', '🥳', '🥺', '😭', '😱',
   '❤️', '✨', '🌟', '🔥', '🌈', '☀️', '🌙', '☁️', '⚡', '❄️',
@@ -51,6 +64,8 @@ interface ChatProps {
   manualChatOverride?: boolean;
   onManualStatusChange?: (isLive: boolean) => void;
   chatCosmetics?: { glow: string; tag: string; stickers: string; vfx: string; style: string };
+  ownedItems?: string[];
+  onChatStyleChange?: (style: string) => void;
   currentProfile?: { avatarUrl: string; backgroundUrl: string };
   externalState?: any;
 }
@@ -68,6 +83,8 @@ export const PixelingsChat: React.FC<ChatProps> = ({
   manualChatOverride,
   onManualStatusChange,
   chatCosmetics = { glow: '', tag: '', stickers: '', vfx: '', style: '' },
+  ownedItems = [],
+  onChatStyleChange,
   currentProfile = { avatarUrl: 'profile-happy-slime', backgroundUrl: 'background-happy-slime' },
   externalState,
 }) => {
@@ -105,7 +122,7 @@ export const PixelingsChat: React.FC<ChatProps> = ({
   const emojiMenuRef = React.useRef<HTMLDivElement>(null);
   const [activeVfxId, setActiveVfxId] = React.useState<string | null>(null);
   const vfxCooldowns = React.useRef<Map<string, number>>(new Map());
-  const { messages, reviewQueue, participants, isLive, lockState, loading, sendMessage, requestNickname: requestNicknameToServer, purgeChat, deleteMessage, approveMessage, rejectMessage, toggleLive } = usePixelingsChat(
+  const { messages, reviewQueue, participants, isLive, lockState, loading, sendMessage, requestNickname: requestNicknameToServer, nicknameRequests, reviewNickname: reviewNicknameToServer, purgeChat, deleteMessage, approveMessage, rejectMessage, toggleLive } = usePixelingsChat(
     room,
     currentUserId,
     demoMode,
@@ -123,11 +140,20 @@ export const PixelingsChat: React.FC<ChatProps> = ({
   const [lockReasonDraft, setLockReasonDraft] = React.useState('Class chat is paused while we reset the room.');
   const [statusNotice, setStatusNotice] = React.useState('');
   const [openUsername, setOpenUsername] = React.useState<string | null>(null);
+  const [showThemeMenu, setShowThemeMenu] = React.useState(false);
+  const themeMenuRef = React.useRef<HTMLDivElement>(null);
+  const availableThemes = CHAT_THEMES.filter((theme) => !theme.id || ownedItems.includes(theme.id));
+  const activeTheme = CHAT_THEMES.find((theme) => theme.id === chatCosmetics.style) || CHAT_THEMES[0];
+  React.useEffect(() => {
+    if (!showThemeMenu) return;
+    const close = (event: MouseEvent) => {
+      if (!themeMenuRef.current?.contains(event.target as Node)) setShowThemeMenu(false);
+    };
+    document.addEventListener('mousedown', close);
+    return () => document.removeEventListener('mousedown', close);
+  }, [showThemeMenu]);
   const [showVfxMenu, setShowVfxMenu] = React.useState(false);
   const [showEmojiMenu, setShowEmojiMenu] = React.useState(false);
-  const [nicknameQueue, setNicknameQueue] = React.useState<Array<{ id: string; user: string; nickname: string; reason: string }>>(
-    isModerator ? [{ id: 'nickname-1', user: 'Pixels7', nickname: 'CodeWizard', reason: 'All nicknames require approval' }] : []
-  );
   const liveUsername = participants.find((participant) => participant.id === currentUserId)?.name || currentUsername;
 
   React.useEffect(() => {
@@ -225,9 +251,13 @@ export const PixelingsChat: React.FC<ChatProps> = ({
     }
   };
 
-  const approveNickname = (id: string, requested: string, user: string) => {
-    if (user === currentUsername) setNickname(requested);
-    setNicknameQueue((prev) => prev.filter((item) => item.id !== id));
+  const handleNicknameReview = async (studentId: string, approve: boolean) => {
+    try {
+      await reviewNicknameToServer(studentId, approve);
+    } catch (error) {
+      console.error('Failed to review nickname:', error);
+      setStatusNotice('Could not save the nickname decision. Please try again.');
+    }
   };
 
   const handleStatusChange = async () => {
@@ -263,14 +293,18 @@ export const PixelingsChat: React.FC<ChatProps> = ({
     }
   };
 
-  const chatIsLive = allChatsLocked ? manualChatOverride === true : manualChatOverride ?? isLive;
+  // The Teacher Lounge is always open for staff, regardless of the room's
+  // session status; the database insert policy also allows moderators to post
+  // to locked sessions, so this only needs to fix the client-side status.
+  const teacherLoungeAlwaysLive = room === 'Teacher Lounge' && isModerator;
+  const chatIsLive = teacherLoungeAlwaysLive ? true : allChatsLocked ? manualChatOverride === true : manualChatOverride ?? isLive;
   const canPost = chatIsLive || isModerator;
 
   if (loading) {
     return <div className="chat-card"><div className="composer">Loading Pixelings Chat...</div></div>;
   }
 
-  const queueCount = reviewQueue.length + nicknameQueue.length;
+  const queueCount = reviewQueue.length + nicknameRequests.length;
 
   return (
     <>
@@ -285,9 +319,9 @@ export const PixelingsChat: React.FC<ChatProps> = ({
             <div><strong>{item.sender_name}</strong><p>{item.content}</p><small>{item.moderation_reason}</small></div>
             <div className="review-actions"><button onClick={() => approveMessage(item)} className="approve-button">Approve</button><button onClick={() => rejectMessage(item)} className="reject-button">Reject</button></div>
           </div>)}
-          {nicknameQueue.map((item) => <div className="review-item" key={item.id}>
-            <div><strong>{item.user} · nickname</strong><p>{item.nickname}</p><small>{item.reason}</small></div>
-            <div className="review-actions"><button onClick={() => approveNickname(item.id, item.nickname, item.user)} className="approve-button">Approve</button><button onClick={() => setNicknameQueue((prev) => prev.filter((entry) => entry.id !== item.id))} className="reject-button">Reject</button></div>
+          {nicknameRequests.map((item) => <div className="review-item" key={item.id}>
+            <div><strong>{item.username} · nickname</strong><p>{item.nickname}</p><small>Nickname requires teacher approval</small></div>
+            <div className="review-actions"><button onClick={() => void handleNicknameReview(item.id, true)} className="approve-button">Approve</button><button onClick={() => void handleNicknameReview(item.id, false)} className="reject-button">Reject</button></div>
           </div>)}
         </aside>}
       </div>}
@@ -298,7 +332,7 @@ export const PixelingsChat: React.FC<ChatProps> = ({
           {CHAT_ROOMS.map((option) => <button key={option} type="button" className={`room-option ${room === option ? 'active' : ''}`} onClick={() => onRoomChange(option)} aria-current={room === option ? 'page' : undefined}>{option}<span className="room-option-sparkles" aria-hidden="true">✦</span></button>)}
         </div>
       </aside>
-      <div className={`chat-card ${chatIsLive ? 'chat-live' : 'chat-locked'}`}>
+      <div className={`chat-card theme-${chatCosmetics.style || 'classic'} ${chatIsLive ? 'chat-live' : 'chat-locked'}`}>
       
       {/* 1. Header & Live Indicator */}
       <div className="chat-header">
@@ -316,6 +350,17 @@ export const PixelingsChat: React.FC<ChatProps> = ({
             <button onClick={handlePurge} className="purge-button">Purge Chat</button>
         </div>}
         <div className="chat-controls">
+        <div className="theme-picker" ref={themeMenuRef}>
+          <button type="button" className={`theme-picker-button theme-${activeTheme.id || 'classic'}`} onClick={() => setShowThemeMenu((open) => !open)} aria-label="Change chat theme">
+            <span aria-hidden="true">{activeTheme.emoji}</span> {activeTheme.name}
+          </button>
+          {showThemeMenu && <div className="theme-picker-menu">
+            {availableThemes.map((theme) => <button key={theme.id || 'classic'} type="button" className={`theme-option ${chatCosmetics.style === theme.id ? 'active' : ''}`} onClick={() => { onChatStyleChange?.(theme.id); setShowThemeMenu(false); }}>
+              <span aria-hidden="true">{theme.emoji}</span> {theme.name}{chatCosmetics.style === theme.id ? ' ✓' : ''}
+            </button>)}
+            {availableThemes.length === 1 && <span className="theme-picker-note">Buy themes in the Stardust Shop!</span>}
+          </div>}
+        </div>
         <div className="profile-tools">
           <label htmlFor="nickname">Nickname</label>
           <input id="nickname" value={nicknameDraft} onChange={(e) => setNicknameDraft(e.target.value)} maxLength={24} />

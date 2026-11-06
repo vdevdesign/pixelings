@@ -18,6 +18,9 @@ import './mobile.css';
 
 const logoSrc = `${import.meta.env.BASE_URL}pixels-tech-lab-logo.png`;
 
+// Browsers restore the previous scroll position on reload; always start at the top.
+if ('scrollRestoration' in window.history) window.history.scrollRestoration = 'manual';
+
 function App() {
   const showInstantTest = import.meta.env.DEV && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
   const [loginType, setLoginType] = React.useState<'staff' | 'kid'>('kid');
@@ -48,6 +51,9 @@ function App() {
   const [confirmPassword, setConfirmPassword] = React.useState('');
   const [resetNotice, setResetNotice] = React.useState('');
   const [activeTab, setActiveTab] = React.useState<'home' | 'chat' | 'games' | 'shop' | 'inventory'>('home');
+
+  // Each tab swap starts at the top of the page, like a fresh navigation.
+  React.useEffect(() => { window.scrollTo(0, 0); }, [activeTab]);
   const [chatRoom, setChatRoom] = React.useState<ChatRoom>('Blender');
   const [showStudentManager, setShowStudentManager] = React.useState(false);
   const [showNotifications, setShowNotifications] = React.useState(false);
@@ -301,12 +307,12 @@ function App() {
     setLoginError('');
     setResetNotice('');
     if (!email.trim() || !email.includes('@')) {
-      setLoginError('Enter your work email first, then choose reset password.');
+      setLoginError('Enter the email first, then choose reset password.');
       return;
     }
     const { error } = await supabase.auth.resetPasswordForEmail(email.trim().toLowerCase(), { redirectTo: window.location.origin });
     if (error) { setLoginError('We could not send the password reset email.'); return; }
-    setResetNotice('Password reset link sent. Check your email.');
+    setResetNotice('Password reset link sent. Check the classroom/staff inbox.');
   };
 
   // Handle navigation to Student Manager
@@ -425,6 +431,7 @@ function App() {
       <button className="login-button" type="submit" disabled={kidEmailVerified ? !firstName || accessCode.length < 4 : !email || !emailPassword}>{kidEmailVerified ? 'Verify account' : (loginType === 'kid' ? 'Continue' : 'Sign in')}</button>
       </form>
       {loginType === 'staff' && <button type="button" className="reset-link-button" disabled={!email.trim() || !email.includes('@')} onClick={requestPasswordReset}>Reset password</button>}
+      {loginType === 'kid' && !kidEmailVerified && <button type="button" className="reset-link-button" disabled={!email.trim() || !email.includes('@')} onClick={requestPasswordReset}>Reset classroom password</button>}
       {/* TEST-ONLY: remove this button before launch. */}
       {showInstantTest && <button type="button" className="instant-test-button" onClick={handleInstantTestAccess}>⚡ Instant access (testing only)</button>}
       {showInstantTest && <div className="instant-test-panel">
@@ -547,10 +554,7 @@ function App() {
           </section>
           </>
           : activeTab === 'chat' ? <>
-          <section className="chat-page-title">
-            <h1>Pixelings <em>Chat</em></h1>
-          </section>
-          <PixelingsChat 
+          <PixelingsChat  
             room={chatRoom} 
             onRoomChange={setChatRoom} 
             currentUserId={userId} 
@@ -558,7 +562,15 @@ function App() {
             currentUsernameHandle={computer} 
             currentProfile={{ avatarUrl: profileAvatarId, backgroundUrl: profileBackgroundId }} 
             chatCosmetics={chatCosmetics} 
-            isAdmin={isTeacher || role !== 'computer'} 
+            ownedItems={ownedItems}
+            onChatStyleChange={(style) => {
+              const next = { ...chatCosmetics, style };
+              setChatCosmetics(next);
+              if (!isInstantPreview && userId) {
+                void supabase.from('profiles').update({ equipped_chat_style: style || null }).eq('id', userId);
+              }
+            }}
+            isAdmin={isTeacher || role !== 'computer'}  
             isModerator={isTeacher || role !== 'computer'} 
             demoMode={isInstantPreview} 
             allChatsLocked={allChatsLocked} 
@@ -593,7 +605,8 @@ function App() {
             onRoomChange={setChatRoom} 
             userId={userId} 
             username={approvedNickname || computer} 
-            chatCosmetics={chatCosmetics} 
+            isModerator={isTeacher || role !== 'computer'}
+            chatCosmetics={chatCosmetics}  
             demoMode={isInstantPreview}
             externalState={{
               messages: sharedMessages,

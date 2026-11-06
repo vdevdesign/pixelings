@@ -64,7 +64,7 @@ button, input { font: inherit; }
 .mini-chat-menu .menu-grid button { width: 32px; height: 32px; padding: 0; display: grid; place-items: center; border: 1px solid #383833; border-radius: 6px; background: #171715; color: #deddd5; cursor: pointer; font-size: 16px; transition: background .2s ease; }
 .mini-chat-menu .menu-grid button:hover { background: #292925; border-color: #d8ff64; }
 .hero { margin-bottom: 34px; }
-.chat-page-shell { padding-top: 24px; padding-bottom: 24px; }
+.chat-page-shell { padding-top: 64px; padding-bottom: 24px; }
 .chat-page-shell .site-header { margin-bottom: 16px; }
 .chat-page-title { margin-bottom: 13px; }
 .chat-page-title h1 { margin: 0; font-size: clamp(30px, 4vw, 42px); line-height: 1; }
@@ -202,6 +202,7 @@ h1 em { color: #d8ff64; font-style: normal; }
 .inventory-actions button { padding: 8px 12px; border: 1px solid #39727b; border-radius: 8px; color: var(--ptl-cyan); background: #123c46; cursor: pointer; font: 11px 'DM Mono', monospace; }
 .inventory-actions button:disabled { opacity: 0.45; cursor: default; }
 .equipped-tag { color: #d8ff64; font: 10px 'DM Mono', monospace; }
+.item-note { margin: 2px 0 6px; color: #b9ce73; font: 9px 'DM Mono', monospace; font-style: italic; }
 .chat-profile-icon { position: relative; display: block; width: 28px; height: 28px; flex: 0 0 28px; overflow: hidden; border: 1px solid #1d8090; border-radius: 7px; background-position: center; background-size: cover; }
 .chat-profile-icon img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; object-position: center bottom; }
 .profile-popover { position: absolute; z-index: 20; top: calc(100% + 5px); left: 0; display: inline-flex; align-items: center; gap: 8px; margin-left: 0; padding: 6px 8px; border: 1px solid #1d8090; border-radius: 8px; color: #d9f5f7; background: #102b35; white-space: nowrap; box-shadow: 0 8px 20px #0008; }
@@ -288,6 +289,57 @@ h1 em { color: #d8ff64; font-style: normal; }
 .room-control select { min-width: 160px; padding: 7px 8px; border: 1px solid #383833; border-radius: 7px; outline: none; color: #deddd5; background: #171715; font-size: 11px; }
 .profile-tools { display: flex; align-items: center; gap: 6px; color: #85847c; font: 10px 'DM Mono', monospace; }
 .profile-tools input { width: 100px; padding: 6px 7px; border: 1px solid #383833; border-radius: 7px; outline: none; color: #deddd5; background: #171715; font-size: 10px; }
+
+/* Chat theme picker (top right of the chat header) */
+.theme-picker { position: relative; }
+.theme-picker-button { display: inline-flex; align-items: center; gap: 5px; padding: 7px 10px; border: 1px solid #383833; border-radius: 7px; color: #deddd5; background: #171715; cursor: pointer; font: 10px 'DM Mono', monospace; }
+.theme-picker-button:hover { border-color: #647b38; color: #d8ff64; }
+.theme-picker-menu { position: absolute; top: calc(100% + 6px); right: 0; z-index: 30; display: flex; flex-direction: column; gap: 3px; min-width: 150px; padding: 6px; border: 1px solid #383833; border-radius: 9px; background: #191917; box-shadow: 0 10px 30px #000a; }
+.theme-option { display: flex; align-items: center; gap: 7px; padding: 7px 9px; border: 1px solid transparent; border-radius: 6px; color: #deddd5; background: transparent; cursor: pointer; font: 10px 'DM Mono', monospace; text-align: left; }
+.theme-option:hover { border-color: #647b38; color: #d8ff64; background: #252b1d; }
+.theme-option.active { border-color: #647b38; color: #d8ff64; background: #252b1d; }
+.theme-picker-note { padding: 6px 9px; color: #85847c; font: 9px 'DM Mono', monospace; }
+
+/* Cyberpunk chat theme — applied when the cyber-style item is equipped. */
+.chat-card.theme-cyber-style { border-color: #0f4454; box-shadow: 0 0 0 1px #00f5ff33, 0 0 34px #00f5ff22, 0 22px 80px #0009; background: #060b14; }
+.chat-card.theme-cyber-style .chat-header, .chat-card.theme-cyber-style .room-menu { border-color: #123a4a; background: linear-gradient(120deg, #08111f, #0b1226 55%, #16081f); }
+.chat-card.theme-cyber-style .room-menu { box-shadow: inset 0 0 26px #00f5ff10; }
+.chat-card.theme-cyber-style .chat-title h3 { color: #7ff7ff; text-shadow: 0 0 10px #00f5ff88; }
+.chat-card.theme-cyber-style .messages { background: #040911; box-shadow: inset 0 0 40px #00f5ff0d; }
+.chat-card.theme-cyber-style .bubble { border-color: #14424f; background: #0a1620; color: #d3f7ff; }
+.chat-card.theme-cyber-style .bubble.mine { border-color: #00f5ff; background: #06222b; color: #aefcff; box-shadow: 0 0 16px #00f5ff33; }
+.chat-card.theme-cyber-style .message-name { color: #7ff7ff; text-shadow: 0 0 8px #00f5ff77; }
+.chat-card.theme-cyber-style .message-name:hover { color: #ff3df5; text-shadow: 0 0 8px #ff3df577; }
+.chat-card.theme-cyber-style .message-meta { color: #4f8fa3; }
+.chat-card.theme-cyber-style .composer { border-top-color: #123a4a; background: #060b14; }
+.chat-card.theme-cyber-style .message-input { border-color: #14424f; color: #d3f7ff; background: #050d16; }
+.chat-card.theme-cyber-style .message-input:focus { border-color: #00f5ff; box-shadow: 0 0 0 3px #00f5ff26; }
+.chat-card.theme-cyber-style .send-button { color: #05131a; border-color: #00f5ff; background: #00f5ff; box-shadow: 0 0 18px #00f5ff55; }
+.chat-card.theme-cyber-style .send-button:hover { background: #ff3df5; border-color: #ff3df5; box-shadow: 0 0 18px #ff3df555; }
+.chat-card.theme-cyber-style .room-option { border-color: #123a4a; color: #7fd6e8; background: #08111f; }
+.chat-card.theme-cyber-style .room-option.active { border-color: #00f5ff; color: #aefcff; background: #062430; box-shadow: 0 0 12px #00f5ff44; }
+.chat-card.theme-cyber-style .chat-profile-icon { box-shadow: 0 0 0 2px #00f5ff55; }
+.chat-card.theme-cyber-style .whisper-tag { border-color: #ff3df5; color: #ffb1f7; background: #2b0d2a; }
+.chat-card.theme-cyber-style .whisper .bubble { border-color: #ff3df5; background: #1d0a1f; color: #ffd6fd; }
+.chat-card.theme-cyber-style .status-label.live { color: #00f5ff; }
+.chat-card.theme-cyber-style .status-dot { background: #00f5ff; box-shadow: 0 0 14px #00f5ff; }
+.chat-card.theme-cyber-style .profile-popover { border-color: #00f5ff66; color: #d3f7ff; background: #08131f; box-shadow: 0 8px 24px #000c, 0 0 18px #00f5ff33; }
+.chat-card.theme-cyber-style .profile-popover small { color: #4fd6e8; }
+.chat-card.theme-cyber-style .nickname-input, .chat-card.theme-cyber-style .whisper-select { border-color: #14424f; color: #d3f7ff; background: #050d16; }
+.chat-card.theme-cyber-style .nickname-button { border-color: #1d8090; color: #7ff7ff; background: #0b2330; }
+.chat-card.theme-cyber-style .nickname-button:hover { border-color: #00f5ff; color: #ff3df5; background: #0e3140; }
+.chat-card.theme-cyber-style .chat-status-banner { border-color: #ffd21f66; color: #ffe98a; background: #26200a; }
+.chat-card.theme-cyber-style .moderator-actions button { border-color: #1d8090; color: #7ff7ff; background: #0b2330; }
+.chat-card.theme-cyber-style .moderator-actions button:hover { border-color: #00f5ff; color: #ff3df5; background: #0e3140; }
+.chat-card.theme-cyber-style .empty { color: #4f8fa3; }
+
+/* Theme picker on the cyberpunk card */
+.chat-card.theme-cyber-style .theme-picker-button { border-color: #14424f; color: #7ff7ff; background: #050d16; box-shadow: 0 0 12px #00f5ff22; }
+.chat-card.theme-cyber-style .theme-picker-button:hover { border-color: #00f5ff; color: #ff3df5; }
+.chat-card.theme-cyber-style .theme-picker-menu { border-color: #14424f; background: #08111f; }
+.chat-card.theme-cyber-style .theme-option { color: #7fd6e8; }
+.chat-card.theme-cyber-style .theme-option:hover { border-color: #00f5ff; color: #ff3df5; background: #06222b; }
+.chat-card.theme-cyber-style .theme-option.active { border-color: #00f5ff; color: #aefcff; background: #062430; }
 .profile-tools span { color: #b9ce73; }
 .chat-title { display: flex; align-items: center; gap: 9px; font-size: 14px; font-weight: 600; }
 .status-dot { width: 8px; height: 8px; border-radius: 50%; background: #d8ff64; box-shadow: 0 0 12px #d8ff64; }

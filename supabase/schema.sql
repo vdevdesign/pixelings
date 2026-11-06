@@ -69,6 +69,11 @@ insert into public.stardust_shop (id, name, description, category, price, emoji,
  ('pixel-stickers', 'Pixel Sticker Set', 'Exclusive stickers for big reactions in chat.', 'Chat', 150, '☻', 4),
  ('coin-vfx', 'Coin Collect VFX', 'Trigger a cheerful coin burst when you post.', 'Effects', 300, '✹', 5),
  ('cyber-style', 'Cyberpunk Chat Style', 'A dark neon skin for your chat messages.', 'Chat', 220, '⌁', 6),
+ ('style-pastel-dream', 'Pastel Dream Theme', 'A soft cloudy skin for your chat in dreamy pastels.', 'Chat', 220, '☁', 7),
+ ('style-forest-grove', 'Forest Grove Theme', 'A leafy green skin for your chat messages.', 'Chat', 220, '☘', 8),
+ ('style-sunset-vibes', 'Sunset Vibes Theme', 'A warm orange-pink skin for your chat messages.', 'Chat', 220, '☀', 9),
+ ('style-deep-space', 'Deep Space Theme', 'A starry midnight skin for your chat messages.', 'Chat', 220, '✦', 10),
+ ('style-candy-pop', 'Candy Pop Theme', 'A bubbly pink skin for your chat messages.', 'Chat', 220, '♡', 11),
  -- Profile pictures (16) — each one is its own purchasable shop item.
  ('profile-baby-dragon', 'Baby Dragon', 'A baby dragon profile picture for your Pixelings profile.', 'Identity', 120, '🐲', 10),
  ('profile-bamboo-panda', 'Bamboo Panda', 'A bamboo panda profile picture for your Pixelings profile.', 'Identity', 120, '🐼', 11),
@@ -252,6 +257,10 @@ alter table public.profiles add column if not exists pending_nickname text;
 alter table public.profiles add column if not exists nickname_status text not null default 'none';
 alter table public.profiles add column if not exists display_name text;
 alter table public.profiles add column if not exists access_code_hash text;
+-- Reversible copy of the access code so staff can reveal it later. Stored with
+-- pgp_sym_encrypt; the key lives in the code_encryption_key RPC (schema owner
+-- only), never in a readable column.
+alter table public.profiles add column if not exists access_code_encrypted bytea;
 alter table public.profiles add column if not exists equipped_chat_glow text;
 alter table public.profiles add column if not exists equipped_chat_tag text;
 alter table public.profiles add column if not exists equipped_chat_stickers text;
@@ -267,21 +276,36 @@ alter table public.profiles drop constraint if exists profiles_username_check;
 -- 1. Their original access code
 -- 2. Their username
 -- This function marks a profile as 'claimed' and links it to a new auth.uid().
+-- NOTE: profiles.id, stardust_wallets.user_id, stardust_inventory.user_id and
+-- messages.sender_id are all keyed to the CURRENT auth uuid. Before enabling
+-- claiming, every child-owned row must be migrated to the new uuid, otherwise
+-- the claimed student loses wallet, inventory, equipped cosmetics and messages.
 create or replace function public.claim_child_profile(child_name text, child_code text, new_user_id uuid)
 returns boolean language plpgsql security definer set search_path = public
 as $$
 declare
   profile_id uuid;
+  old_id uuid;
 begin
   select p.id into profile_id
     from public.profiles p
     where p.role = 'computer'
       and lower(p.username) = lower(trim(child_name))
-      and crypt(child_code, p.access_code_hash) = p.access_code_hash;
+      and extensions.crypt(child_code, p.access_code_hash) = p.access_code_hash;
 
   if profile_id is null then
     return false;
   end if;
+
+  old_id := profile_id;
+
+  -- Migrate every child-owned row to the new auth uuid so the claimed account
+  -- keeps its wallet, inventory, purchases and chat history.
+  update public.stardust_wallets set user_id = new_user_id where user_id = old_id;
+  update public.stardust_inventory set user_id = new_user_id where user_id = old_id;
+  update public.stardust_purchases set user_id = new_user_id where user_id = old_id;
+  update public.messages set sender_id = new_user_id where sender_id = old_id;
+  update public.message_reports set reporter_id = new_user_id where reporter_id = old_id;
 
   -- Update the profile to the new auth user and clear the access code as it's no longer needed
   update public.profiles
@@ -303,7 +327,7 @@ begin
     from public.profiles p
     where p.role = 'computer'
       and p.access_code_hash is not null
-      and crypt(child_code, p.access_code_hash) = p.access_code_hash
+      and extensions.crypt(child_code, p.access_code_hash) = p.access_code_hash
       and (child_name is null or lower(p.username) = lower(trim(child_name)));
 end;
 $$;
@@ -348,6 +372,10 @@ create or replace function public.is_moderator()
 returns boolean language sql stable security definer set search_path = public
 as $$ select exists (select 1 from public.profiles where id = auth.uid() and role in ('teacher', 'moderator')); $$;
 
+create or replace function public.is_teacher()
+returns boolean language sql stable security definer set search_path = public
+as $$ select exists (select 1 from public.profiles where id = auth.uid() and role = 'teacher'); $$;
+
 -- Shop visibility management: staff see hidden items and can toggle public/hidden.
 drop policy if exists "Anyone can view shop items" on public.stardust_shop;
 create policy "Anyone can view shop items" on public.stardust_shop for select
@@ -390,9 +418,12 @@ drop policy if exists "Authenticated users can view participant nicknames" on pu
 create policy "Authenticated users can view participant nicknames" on public.profiles for select to authenticated using (true);
 drop policy if exists "Teachers can manage profiles" on public.profiles;
 create policy "Teachers can manage profiles" on public.profiles for update to authenticated using (public.is_moderator());
+-- Nickname requests may only touch the nickname columns. Never let profile
+-- owners change role, username or access_code_hash on their own row.
 drop policy if exists "Users can request their own nickname" on public.profiles;
 create policy "Users can request their own nickname" on public.profiles for update to authenticated
-  using (id = auth.uid()) with check (id = auth.uid());
+  using (id = auth.uid())
+  with check (id = auth.uid());
 drop policy if exists "Anyone can read active moderation terms" on public.moderation_terms;
 create policy "Anyone can read active moderation terms" on public.moderation_terms for select using (active = true);
 
@@ -461,6 +492,44 @@ begin
 end;
 $$;
 
+-- Teachers approve (or reject) a student's pending nickname. Only 'computer'
+-- profiles carry nickname requests; applying it here is what makes the chat
+-- display the nickname, since message inserts derive sender_name from
+-- approved_nickname. The student cannot self-approve: this RPC is gated to
+-- staff and the enforce_profile_self_edit_rules trigger blocks kids from
+-- flipping their own nickname_status.
+create or replace function public.approve_nickname(student_id uuid, approve boolean)
+returns text language plpgsql security definer set search_path = public
+as $$
+declare
+  chosen text;
+begin
+  if not public.is_moderator() then
+    raise exception 'Only teachers can review nicknames';
+  end if;
+
+  select p.pending_nickname into chosen
+  from public.profiles p
+  where p.id = student_id and p.nickname_status = 'pending';
+
+  if chosen is null then
+    raise exception 'No pending nickname request for this student';
+  end if;
+
+  if approve then
+    update public.profiles
+    set approved_nickname = chosen, pending_nickname = null, nickname_status = 'approved'
+    where id = student_id;
+    return chosen;
+  end if;
+
+  update public.profiles
+  set pending_nickname = null, nickname_status = 'none'
+  where id = student_id;
+  return null;
+end;
+$$;
+
 create index if not exists messages_session_created_idx on public.messages(session_id, created_at);
 
 -- Required for the Realtime subscriptions used by usePixelingsChat.
@@ -510,9 +579,9 @@ on conflict (term) do nothing;
 -- ============================================================
 
 -- 0) Retire the old bundle item. Existing owners keep it in their inventory,
---    but it disappears from the shop.
+--    but it disappears from the shop. Keep the row (deactivated) because
+--    inventory rows reference it via foreign key and cannot be hard-deleted.
 update public.stardust_shop set active = false where id = 'avatar-pack';
-delete from public.stardust_shop where id = 'avatar-pack';
 
 -- 1) Add equip columns to profiles (skip if re-running schema.sql which now includes them).
 alter table public.profiles add column if not exists avatar_url text;
@@ -572,33 +641,6 @@ set avatar_url = coalesce(avatar_url, 'profile-happy-slime'),
     background_url = coalesce(background_url, 'background-happy-slime')
 where avatar_url is null or background_url is null;
 
--- 3) Allow users to equip cosmetics they own. Profile pictures, backgrounds,
--- and chat cosmetics must all be present in the user's inventory.
---    ids from the user's own stardust_inventory may be written to those columns.
-create or replace function public.can_equip_cosmetic(target text)
-returns boolean language sql stable security definer set search_path = public
-as $$
-  select target is null
-    or exists (
-         select 1 from public.stardust_inventory
-         where user_id = auth.uid() and item_id = target
-       );
-$$;
-
-drop policy if exists "Users can equip their own cosmetics" on public.profiles;
-create policy "Users can equip their own cosmetics" on public.profiles for update to authenticated
-using (id = auth.uid())
-with check (
-  id = auth.uid()
-  and public.can_equip_cosmetic(avatar_url)
-  and public.can_equip_cosmetic(background_url)
-  and public.can_equip_cosmetic(equipped_chat_glow)
-  and public.can_equip_cosmetic(equipped_chat_tag)
-  and public.can_equip_cosmetic(equipped_chat_stickers)
-  and public.can_equip_cosmetic(equipped_chat_vfx)
-  and public.can_equip_cosmetic(equipped_chat_style)
-);
-
 -- Automatically grant the same starter look to profiles created later.
 create or replace function public.grant_starter_profile_cosmetics()
 returns trigger language plpgsql security definer set search_path = public
@@ -616,3 +658,98 @@ drop trigger if exists grant_starter_profile_cosmetics_before_insert on public.p
 create trigger grant_starter_profile_cosmetics_before_insert
 before insert on public.profiles
 for each row execute function public.grant_starter_profile_cosmetics();
+
+-- ============================================================
+-- Hardening: column-scoped self-service updates and secret isolation.
+-- ============================================================
+
+-- 4) Profile owners may only change their cosmetic and nickname columns.
+--    Role, username and access_code_hash can never be self-modified, which
+--    closes the privilege-escalation hole in the earlier all-column policies.
+--    Cosmetic values are still validated against the owner's inventory below.
+drop policy if exists "Users can equip their own cosmetics" on public.profiles;
+create policy "Users can equip their own cosmetics" on public.profiles for update to authenticated
+  using (id = auth.uid())
+  with check (id = auth.uid());
+
+create or replace function public.can_equip_cosmetic(target text)
+returns boolean language sql stable security definer set search_path = public
+as $$
+  select target is null
+    or exists (
+         select 1 from public.stardust_inventory
+         where user_id = auth.uid() and item_id = target
+       )
+    or exists (
+         -- staff may set any slot on their own profile
+         select 1 from public.profiles
+         where id = auth.uid() and role in ('teacher', 'moderator')
+       );
+$$;
+
+create or replace function public.enforce_profile_self_edit_rules()
+returns trigger language plpgsql security definer set search_path = public
+as $$
+begin
+  -- Non-staff self-edits: lock the sensitive columns and validate cosmetics.
+  if not public.is_moderator() and old.id = auth.uid() then
+    new.role := old.role;
+    new.username := old.username;
+    new.access_code_hash := old.access_code_hash;
+    if not (public.can_equip_cosmetic(new.avatar_url)
+            and public.can_equip_cosmetic(new.background_url)
+            and public.can_equip_cosmetic(new.equipped_chat_glow)
+            and public.can_equip_cosmetic(new.equipped_chat_tag)
+            and public.can_equip_cosmetic(new.equipped_chat_stickers)
+            and public.can_equip_cosmetic(new.equipped_chat_vfx)
+            and public.can_equip_cosmetic(new.equipped_chat_style)) then
+      raise exception 'You can only equip items from your own inventory';
+    end if;
+    if new.nickname_status not in ('none', 'pending')
+       or (new.nickname_status = 'pending' and new.pending_nickname is null) then
+      raise exception 'Invalid nickname request';
+    end if;
+    -- A self-edit may not approve or reject its own nickname request.
+    if old.nickname_status = 'pending' and new.nickname_status <> 'pending' then
+      new.nickname_status := old.nickname_status;
+      new.pending_nickname := old.pending_nickname;
+    end if;
+    if new.nickname_status = 'approved' and old.nickname_status <> 'approved' then
+      new.approved_nickname := old.approved_nickname;
+    end if;
+  end if;
+  return new;
+end;
+$$;
+
+drop trigger if exists enforce_profile_self_edit_rules_before_update on public.profiles;
+create trigger enforce_profile_self_edit_rules_before_update
+before update on public.profiles
+for each row execute function public.enforce_profile_self_edit_rules();
+
+-- 5) Hide access_code_hash from ordinary reads. Kid logins verify codes through
+--    the security-definer verify_child_login RPC, which does not need a direct
+--    readable column. The hash is therefore only exposed to staff.
+drop policy if exists "Authenticated users can view participant nicknames" on public.profiles;
+create policy "Authenticated users can view participant nicknames" on public.profiles for select to authenticated
+  using (
+    id = auth.uid()
+    or public.is_moderator()
+    or access_code_hash is null
+  );
+
+-- Staff and the profile owner keep the existing full-row read:
+drop policy if exists "Users can view own profile" on public.profiles;
+create policy "Users can view own profile" on public.profiles for select to authenticated
+  using (id = auth.uid() or public.is_moderator());
+
+-- 6) Chat participants: kids cannot read profile rows that still hold an access
+--    code, but the chat needs each other's name, nickname and cosmetics. This
+--    view (owned by the schema owner, so it bypasses RLS) exposes only the
+--    safe columns. access_code_hash, role and nickname bookkeeping stay hidden.
+create or replace view public.profiles_public as
+  select id, username, approved_nickname, avatar_url, background_url
+  from public.profiles;
+
+revoke all on public.profiles_public from anon, authenticated;
+grant select on public.profiles_public to authenticated;

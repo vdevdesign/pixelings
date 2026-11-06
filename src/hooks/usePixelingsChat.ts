@@ -17,6 +17,7 @@ export interface Message {
   session_id?: string;
 }
 export interface Participant { id: string; name: string; avatarUrl?: string | null; backgroundUrl?: string | null; }
+export interface NicknameRequest { id: string; username: string; nickname: string; }
 export interface ChatLockState {
   reason: string;
   changedAt?: string;
@@ -41,6 +42,7 @@ export function usePixelingsChat(
   const [messages, setMessages] = React.useState<Message[]>([]);
   const [reviewQueue, setReviewQueue] = React.useState<Message[]>([]);
   const [participants, setParticipants] = React.useState<Participant[]>([]);
+  const [nicknameRequests, setNicknameRequests] = React.useState<NicknameRequest[]>([]);
   const [isLive, setIsLive] = React.useState<boolean>(false);
   const [lockState, setLockState] = React.useState<ChatLockState>({ reason: '' });
   const [loading, setLoading] = React.useState<boolean>(true);
@@ -72,8 +74,12 @@ export function usePixelingsChat(
     }
     // 1. Fetch initial session lock state & messages
     async function initChat() {
-      const { data: profileData } = await supabase.from('profiles').select('id, username, approved_nickname, avatar_url, background_url');
+      const { data: profileData } = await supabase.from('profiles_public').select('id, username, approved_nickname, avatar_url, background_url');
       if (profileData) setParticipants(profileData.map((profile) => ({ id: profile.id, name: profile.approved_nickname || profile.username, avatarUrl: profile.avatar_url || 'profile-happy-slime', backgroundUrl: profile.background_url || 'background-happy-slime' })));
+      if (isModerator) {
+        const { data: pendingData } = await supabase.from('profiles').select('id, username, pending_nickname').eq('nickname_status', 'pending');
+        if (pendingData) setNicknameRequests(pendingData.map((row) => ({ id: row.id, username: row.username, nickname: row.pending_nickname })));
+      }
       const { data: session } = await supabase
         .from('sessions')
         .select('id, status, lock_reason, locked_at, locked_by')
@@ -140,11 +146,19 @@ export function usePixelingsChat(
       .on(
         'postgres_changes',
         { event: 'UPDATE', schema: 'public', table: 'profiles' },
-        (payload) => {
-          const profile = payload.new as { id: string; username: string; approved_nickname?: string | null; avatar_url?: string | null; background_url?: string | null };
-          setParticipants((prev) => prev.map((participant) => participant.id === profile.id
-            ? { ...participant, name: profile.approved_nickname || profile.username, avatarUrl: profile.avatar_url || 'profile-happy-slime', backgroundUrl: profile.background_url || 'background-happy-slime' }
-            : participant));
+        () => {
+          // Realtime payloads are filtered by RLS, so a row may arrive without
+          // data. Refetch the safe public view to keep participants in sync.
+          void supabase.from('profiles_public').select('id, username, approved_nickname, avatar_url, background_url')
+            .then(({ data }) => {
+              if (data) setParticipants(data.map((profile) => ({ id: profile.id, name: profile.approved_nickname || profile.username, avatarUrl: profile.avatar_url || 'profile-happy-slime', backgroundUrl: profile.background_url || 'background-happy-slime' })));
+            });
+          if (isModerator) {
+            void supabase.from('profiles').select('id, username, pending_nickname').eq('nickname_status', 'pending')
+              .then(({ data }) => {
+                if (data) setNicknameRequests(data.map((row) => ({ id: row.id, username: row.username, nickname: row.pending_nickname })));
+              });
+          }
         }
       )
       .subscribe();
@@ -208,6 +222,24 @@ export function usePixelingsChat(
     if (error) throw error;
   };
 
+  // Teacher action: approve or reject a student's pending nickname. Approval
+  // writes approved_nickname server-side, so the message trigger and the
+  // participants refetch immediately start using the new name.
+  const reviewNickname = async (studentId: string, approve: boolean) => {
+    if (demoMode) {
+      setNicknameRequests((prev) => prev.filter((request) => request.id !== studentId));
+      return;
+    }
+    const { data, error } = await supabase.rpc('approve_nickname', { student_id: studentId, approve });
+    if (error) throw error;
+    setNicknameRequests((prev) => prev.filter((request) => request.id !== studentId));
+    void supabase.from('profiles_public').select('id, username, approved_nickname, avatar_url, background_url')
+      .then(({ data }) => {
+        if (data) setParticipants(data.map((profile) => ({ id: profile.id, name: profile.approved_nickname || profile.username, avatarUrl: profile.avatar_url || 'profile-happy-slime', backgroundUrl: profile.background_url || 'background-happy-slime' })));
+      });
+    return data;
+  };
+
   // DM / Admin purge functionality
   const purgeChat = async () => {
     if (demoMode) {
@@ -265,5 +297,5 @@ export function usePixelingsChat(
     }
   };
 
-  return { messages: activeMessages, reviewQueue: isModerator ? reviewQueue : [], participants, isLive: activeIsLive, lockState, loading: activeLoading, sendMessage, requestNickname, purgeChat, deleteMessage, approveMessage, rejectMessage, toggleLive };
+  return { messages: activeMessages, reviewQueue: isModerator ? reviewQueue : [], participants, isLive: activeIsLive, lockState, loading: activeLoading, sendMessage, requestNickname, nicknameRequests, reviewNickname, purgeChat, deleteMessage, approveMessage, rejectMessage, toggleLive };
 }

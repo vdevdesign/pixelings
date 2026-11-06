@@ -16,7 +16,7 @@ const KID_FRIENDLY_EMOJIS = [
   '🎈', '🎁', '🎊', '🎉', '🎏', '🎇', '🎆', '🧸', '🎨', '🎬'
 ];
 
-export function MiniChat({ userId, username, room, onRoomChange, demoMode = false, chatCosmetics = { glow: '', tag: '', stickers: '', vfx: '', style: '' }, externalState }: { userId: string; username: string; room: ChatRoom; onRoomChange: (room: ChatRoom) => void; demoMode?: boolean; chatCosmetics?: { glow: string; tag: string; stickers: string; vfx: string; style: string }; externalState?: any }) {
+export function MiniChat({ userId, username, room, onRoomChange, demoMode = false, isModerator = false, chatCosmetics = { glow: '', tag: '', stickers: '', vfx: '', style: '' }, externalState }: { userId: string; username: string; room: ChatRoom; onRoomChange: (room: ChatRoom) => void; demoMode?: boolean; isModerator?: boolean; chatCosmetics?: { glow: string; tag: string; stickers: string; vfx: string; style: string }; externalState?: any }) {
   const [open, setOpen] = React.useState(false);
   const [input, setInput] = React.useState('');
   const [showVfxMenu, setShowVfxMenu] = React.useState(false);
@@ -24,7 +24,9 @@ export function MiniChat({ userId, username, room, onRoomChange, demoMode = fals
   const vfxMenuRef = React.useRef<HTMLDivElement>(null);
   const emojiMenuRef = React.useRef<HTMLDivElement>(null);
   const messagesContainerRef = React.useRef<HTMLDivElement>(null);
-  const { messages, isLive, loading, sendMessage } = usePixelingsChat(room, userId, demoMode, false, externalState);
+  const { messages, isLive, loading, sendMessage } = usePixelingsChat(room, userId, demoMode, isModerator, externalState);
+  // The Teacher Lounge is always open for staff, matching the main chat.
+  const roomIsLive = room === 'Teacher Lounge' && isModerator ? true : isLive;
 
   React.useEffect(() => {
     if (messagesContainerRef.current && open) {
@@ -47,7 +49,7 @@ export function MiniChat({ userId, username, room, onRoomChange, demoMode = fals
 
   const handleSend = async (event: React.FormEvent) => {
     event.preventDefault();
-    if (!input.trim() || !isLive) return;
+    if (!input.trim() || !roomIsLive) return;
     await sendMessage(input.trim(), undefined, username);
     setInput('');
   };
@@ -70,7 +72,7 @@ export function MiniChat({ userId, username, room, onRoomChange, demoMode = fals
 
   return <aside className={`mini-chat ${open ? 'open' : ''}`} aria-label="Mini chat">
     {open ? <>
-      <div className="mini-chat-header"><div><strong>{room}</strong><span>{isLive ? 'LIVE' : 'LOCKED'}</span></div><button onClick={() => setOpen(false)} aria-label="Minimize chat">−</button></div>
+      <div className="mini-chat-header"><div><strong>{room}</strong><span>{roomIsLive ? 'LIVE' : 'LOCKED'}</span></div><button onClick={() => setOpen(false)} aria-label="Minimize chat">−</button></div>
       <label className="mini-chat-room">Room<select value={room} onChange={(event) => onRoomChange(event.target.value as ChatRoom)}>{CHAT_ROOMS.map((option) => <option key={option} value={option}>{option}</option>)}</select></label>
       <div className="mini-chat-messages" ref={messagesContainerRef}>{loading ? <p className="empty">Loading chat...</p> : messages.slice(-8).map((message) => { 
         const isMine = message.sender_id === userId; 

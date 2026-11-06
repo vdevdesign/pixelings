@@ -5,7 +5,6 @@ interface Student {
   id: string;
   username: string;
   approved_nickname: string;
-  access_code_hash: string;
 }
 
 interface QuickNeed {
@@ -21,13 +20,14 @@ export const TeacherDashboard: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [newStudent, setNewStudent] = useState({ name: '', code: '' });
+  const [revealedCodes, setRevealedCodes] = useState<Record<string, string>>({});
   const [quickNeeds, setQuickNeeds] = useState<QuickNeed[]>([]);
 
   const fetchStudents = async () => {
     setLoading(true);
     const { data, error } = await supabase
       .from('profiles')
-      .select('id, username, approved_nickname, access_code_hash')
+      .select('id, username, approved_nickname')
       .eq('role', 'computer')
       .order('username');
     if (error) setError(error.message);
@@ -50,16 +50,10 @@ export const TeacherDashboard: React.FC = () => {
     e.preventDefault();
     if (!newStudent.name || !newStudent.code) return;
     
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) {
-      setError('You must be logged in as a teacher to add students.');
-      return;
-    }
-
+    setError('');
     const { error } = await supabase.rpc('create_student_profile', {
-      classroom_user_id: user.id,
       first_name: newStudent.name,
-      plain_access_code: newStudent.code
+      access_code: newStudent.code
     });
 
     if (error) {
@@ -71,13 +65,19 @@ export const TeacherDashboard: React.FC = () => {
     }
   };
 
+  const handleShowCode = async (id: string) => {
+    const { data, error: rpcError } = await supabase.rpc('get_student_code', { student_id: id });
+    if (rpcError) setError(rpcError.message);
+    else setRevealedCodes((prev) => ({ ...prev, [id]: (data as string | null) || 'No revealable code — reset the code once to store one.' }));
+  };
+
   const handleResetCode = async (id: string) => {
     const newCode = prompt('Enter new magic access code:');
     if (!newCode) return;
 
     const { error } = await supabase.rpc('reset_student_code', {
-      profile_id: id,
-      new_plain_code: newCode
+      student_id: id,
+      new_code: newCode
     });
 
     if (error) alert(`Error: ${error.message}`);
@@ -90,8 +90,8 @@ export const TeacherDashboard: React.FC = () => {
     if (!confirmRegen) return;
 
     const { error } = await supabase.rpc('reset_student_code', {
-      profile_id: id,
-      new_plain_code: randomCode
+      student_id: id,
+      new_code: randomCode
     });
 
     if (error) alert(`Error: ${error.message}`);
@@ -191,8 +191,11 @@ export const TeacherDashboard: React.FC = () => {
                       <tr key={s.id}>
                         <td>{s.username}</td>
                         <td>{s.approved_nickname || '-'}</td>
-                        <td><span className="code-pill">••••••</span></td>
+                        <td><span className="code-pill">{revealedCodes[s.id] || '••••••'}</span></td>
                         <td className="action-cell">
+                          {revealedCodes[s.id]
+                            ? <button onClick={() => setRevealedCodes((prev) => { const next = { ...prev }; delete next[s.id]; return next; })} className="action-btn">Hide</button>
+                            : <button onClick={() => void handleShowCode(s.id)} className="action-btn">Show</button>}
                           <button onClick={() => handleResetCode(s.id)} className="action-btn">Reset</button>
                           <button onClick={() => handleRegenerateCode(s.id)} className="action-btn regen-btn">🎲 Regenerate</button>
                         </td>

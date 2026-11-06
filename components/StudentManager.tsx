@@ -5,7 +5,6 @@ interface Student {
   id: string;
   username: string;
   approved_nickname: string;
-  access_code_hash: string;
 }
 
 export const StudentManager: React.FC = () => {
@@ -13,12 +12,13 @@ export const StudentManager: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [newStudent, setNewStudent] = useState({ name: '', code: '' });
+  const [revealedCodes, setRevealedCodes] = useState<Record<string, string>>({});
 
   const fetchStudents = async () => {
     setLoading(true);
     const { data, error } = await supabase
       .from('profiles')
-      .select('id, username, approved_nickname, access_code_hash')
+      .select('id, username, approved_nickname')
       .eq('role', 'computer')
       .order('username');
     
@@ -67,6 +67,12 @@ export const StudentManager: React.FC = () => {
 
     if (rpcError) setError(rpcError.message);
     else await fetchStudents();
+  };
+
+  const handleShowCode = async (id: string) => {
+    const { data, error: rpcError } = await supabase.rpc('get_student_code', { student_id: id });
+    if (rpcError) setError(rpcError.message);
+    else setRevealedCodes((prev) => ({ ...prev, [id]: (data as string | null) || 'No revealable code — reset the code once to store one.' }));
   };
 
   if (loading) return <div className="manager-loading">Loading Students...</div>;
@@ -118,8 +124,11 @@ export const StudentManager: React.FC = () => {
               <tr key={s.id}>
                 <td>{s.username}</td>
                 <td>{s.approved_nickname || '-'}</td>
-                <td>••••••</td>
+                <td>{revealedCodes[s.id] || '••••••'}</td>
                 <td>
+                  {revealedCodes[s.id]
+                    ? <button onClick={() => setRevealedCodes((prev) => { const next = { ...prev }; delete next[s.id]; return next; })} className="action-btn">Hide Code</button>
+                    : <button onClick={() => void handleShowCode(s.id)} className="action-btn">Show Code</button>}
                   <button onClick={() => handleResetCode(s.id)} className="action-btn">Reset Code</button>{' '}
                   <button onClick={() => handleDeleteStudent(s.id)} className="action-btn remove-btn">Remove</button>
                 </td>
