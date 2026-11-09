@@ -29,15 +29,7 @@ export function usePixelingsChat(
   roomName: string, 
   currentUserId: string, 
   demoMode = false, 
-  isModerator = false,
-  externalState?: {
-    messages: Message[];
-    setMessages: React.Dispatch<React.SetStateAction<Message[]>>;
-    isLive: boolean;
-    setIsLive: React.Dispatch<React.SetStateAction<boolean>>;
-    loading: boolean;
-    setLoading: React.Dispatch<React.SetStateAction<boolean>>;
-  }
+  isModerator = false
 ) {
   const [messages, setMessages] = React.useState<Message[]>([]);
   const [reviewQueue, setReviewQueue] = React.useState<Message[]>([]);
@@ -47,37 +39,46 @@ export function usePixelingsChat(
   const [lockState, setLockState] = React.useState<ChatLockState>({ reason: '' });
   const [loading, setLoading] = React.useState<boolean>(true);
   const [sessionId, setSessionId] = React.useState<string>('');
+  const [sessionRoom, setSessionRoom] = React.useState('');
+  const [loadedRoom, setLoadedRoom] = React.useState('');
   const coinSendTimes = React.useRef<number[]>([]);
 
-  // Resolve which state to use: provided external state or internal hook state
-  const activeMessages = externalState?.messages ?? messages;
-  const activeSetMessages = externalState?.setMessages ?? setMessages;
-  const activeIsLive = externalState?.isLive ?? isLive;
-  const activeSetIsLive = externalState?.setIsLive ?? setIsLive;
-  const activeLoading = externalState?.loading ?? loading;
-  const activeSetLoading = externalState?.setLoading ?? setLoading;
+  const activeMessages = loadedRoom === roomName ? messages : [];
+  const activeIsLive = loadedRoom === roomName && isLive;
+  const activeLoading = loadedRoom !== roomName || loading;
 
   React.useEffect(() => {
+    let cancelled = false;
     let realtimeSessionId = '';
+    setMessages([]);
+    setIsLive(false);
+    setLoading(true);
+    setSessionId('');
+    setSessionRoom('');
+    setLoadedRoom(roomName);
+    setReviewQueue([]);
+    setLockState({ reason: '' });
     if (demoMode) {
-      activeSetMessages([
-        { id: '1', sender_id: 'mira', sender_name: 'Mira', sender_username: 'Mira', content: 'The new lounge is looking good ✨', is_whisper: false, created_at: new Date().toISOString() },
-        { id: '2', sender_id: currentUserId, sender_name: 'You', sender_username: 'YourFirstName', content: 'Right? I wanted it to feel warm, not noisy.', is_whisper: false, created_at: new Date().toISOString() },
+      setMessages([
+        { id: '1', sender_id: 'mira', sender_name: 'Mira', sender_username: 'Mira', content: `The ${roomName} room is looking good ✨`, is_whisper: false, created_at: new Date().toISOString() },
+        { id: '2', sender_id: currentUserId, sender_name: 'You', sender_username: 'YourFirstName', content: `We can keep ${roomName} chat focused on this class.`, is_whisper: false, created_at: new Date().toISOString() },
         { id: '3', sender_id: 'mira', sender_name: 'Mira', sender_username: 'Mira', content: 'That balance is perfect.', is_whisper: true, recipient_id: currentUserId, created_at: new Date().toISOString() },
       ]);
       setParticipants([{ id: 'mira', name: 'Mira', avatarUrl: profileItems[0]?.id, backgroundUrl: null }, { id: 'pixels7', name: 'Pixels7', avatarUrl: profileItems[1]?.id, backgroundUrl: null }, { id: 'pixels12', name: 'Pixels12', avatarUrl: profileItems[2]?.id, backgroundUrl: null }]);
       setReviewQueue([{ id: 'review-1', sender_id: 'pixels7', sender_name: 'Pixels7', content: 'This is a stupid idea', is_whisper: false, created_at: new Date().toISOString(), status: 'pending', moderation_reason: 'Possible unsafe language: “stupid”' }]);
-      activeSetIsLive(true);
+      setIsLive(true);
       setLockState({ reason: '' });
-      activeSetLoading(false);
-      return;
+      setLoading(false);
+      return () => { cancelled = true; };
     }
     // 1. Fetch initial session lock state & messages
     async function initChat() {
       const { data: profileData } = await supabase.from('profiles_public').select('id, username, approved_nickname, avatar_url, background_url');
+      if (cancelled) return;
       if (profileData) setParticipants(profileData.map((profile) => ({ id: profile.id, name: profile.approved_nickname || profile.username, avatarUrl: profile.avatar_url || 'profile-happy-slime', backgroundUrl: profile.background_url || 'background-happy-slime' })));
       if (isModerator) {
         const { data: pendingData } = await supabase.from('profiles').select('id, username, pending_nickname').eq('nickname_status', 'pending');
+        if (cancelled) return;
         if (pendingData) setNicknameRequests(pendingData.map((row) => ({ id: row.id, username: row.username, nickname: row.pending_nickname })));
       }
       const { data: session } = await supabase
@@ -85,10 +86,12 @@ export function usePixelingsChat(
         .select('id, status, lock_reason, locked_at, locked_by')
         .eq('name', roomName)
         .single();
-      if (!session) { activeSetLoading(false); return; }
+      if (cancelled) return;
+      if (!session) { setLoading(false); return; }
       realtimeSessionId = session.id;
       setSessionId(session.id);
-      activeSetIsLive(session?.status === 'live');
+      setSessionRoom(roomName);
+      setIsLive(session.status === 'live');
       setLockState({
         reason: session.status === 'locked' ? session.lock_reason || '' : '',
         changedAt: session.locked_at || undefined,
@@ -101,8 +104,9 @@ export function usePixelingsChat(
         .eq('session_id', session.id)
         .order('created_at', { ascending: true });
 
-      if (msgData) activeSetMessages(msgData);
-      activeSetLoading(false);
+      if (cancelled) return;
+      if (msgData) setMessages(msgData);
+      setLoading(false);
     }
 
     initChat();
@@ -114,11 +118,12 @@ export function usePixelingsChat(
         'postgres_changes',
         { event: 'INSERT', schema: 'public', table: 'messages' },
         (payload) => {
+          if (cancelled) return;
           const newMsg = payload.new as Message;
           if (newMsg.session_id !== realtimeSessionId) return;
           // Filtering recipient whispers client-side in tandem with RLS
           if (isModerator || !newMsg.is_whisper || newMsg.recipient_id === currentUserId || newMsg.sender_id === currentUserId) {
-            activeSetMessages((prev) => [...prev, newMsg]);
+            setMessages((prev) => [...prev, newMsg]);
           }
         }
       )
@@ -126,16 +131,18 @@ export function usePixelingsChat(
         'postgres_changes',
         { event: 'DELETE', schema: 'public', table: 'messages' },
         (payload) => {
+          if (cancelled) return;
           if ((payload.old as Message).session_id !== realtimeSessionId) return;
-          activeSetMessages((prev) => prev.filter((msg) => msg.id !== payload.old.id));
+          setMessages((prev) => prev.filter((msg) => msg.id !== payload.old.id));
         }
       )
       .on(
         'postgres_changes',
         { event: 'UPDATE', schema: 'public', table: 'sessions' },
         (payload) => {
+          if (cancelled) return;
           if (payload.new.id !== realtimeSessionId) return;
-          activeSetIsLive(payload.new.status === 'live');
+          setIsLive(payload.new.status === 'live');
           setLockState({
             reason: payload.new.status === 'locked' ? payload.new.lock_reason || '' : '',
             changedAt: payload.new.locked_at || undefined,
@@ -164,15 +171,16 @@ export function usePixelingsChat(
       .subscribe();
 
     return () => {
+      cancelled = true;
       supabase.removeChannel(chatChannel);
     };
-  }, [roomName, currentUserId, demoMode, isModerator, activeSetMessages, activeSetIsLive, activeSetLoading]);
+  }, [roomName, currentUserId, demoMode, isModerator]);
 
   // Send message helper enforcing client-side live check before RPC/Insert
   const sendMessage = async (content: string, recipientId?: string, senderName: string = 'Pixel') => {
-    if (!activeIsLive && !isModerator) throw new Error("Chat is currently locked. Session is not LIVE.");
+    if ((!activeIsLive || sessionRoom !== roomName) && !isModerator) throw new Error("Chat is currently locked. Session is not LIVE.");
 
-    if (!demoMode && !sessionId) {
+    if (!demoMode && (!sessionId || sessionRoom !== roomName)) {
       throw new Error("Chat is still loading. Please try sending the effect again in a moment.");
     }
 
@@ -192,7 +200,7 @@ export function usePixelingsChat(
       };
       const reason = moderationReason(content);
       if (reason) setReviewQueue((prev) => [...prev, { ...message, status: 'pending', moderation_reason: reason }]);
-      else activeSetMessages((prev) => [...prev, message]);
+      else setMessages((prev) => [...prev, message]);
       return;
     }
 
@@ -243,29 +251,29 @@ export function usePixelingsChat(
   // DM / Admin purge functionality
   const purgeChat = async () => {
     if (demoMode) {
-      activeSetMessages([]);
+      setMessages([]);
       return;
     }
     const { error } = await supabase.from('messages').delete().eq('session_id', sessionId);
     if (error) throw error;
-    activeSetMessages([]);
+    setMessages([]);
   };
 
   const deleteMessage = async (messageId: string) => {
     if (demoMode) {
-      activeSetMessages((prev) => prev.filter((message) => message.id !== messageId));
+      setMessages((prev) => prev.filter((message) => message.id !== messageId));
       setReviewQueue((prev) => prev.filter((item) => item.id !== messageId));
       return;
     }
     const { error } = await supabase.from('messages').delete().eq('id', messageId);
     if (error) throw error;
-    activeSetMessages((prev) => prev.filter((message) => message.id !== messageId));
+    setMessages((prev) => prev.filter((message) => message.id !== messageId));
   };
 
   const approveMessage = async (message: Message) => {
     if (demoMode) {
       setReviewQueue((prev) => prev.filter((item) => item.id !== message.id));
-      activeSetMessages((prev) => [...prev, { ...message, status: 'approved' }]);
+      setMessages((prev) => [...prev, { ...message, status: 'approved' }]);
       return;
     }
     await supabase.from('messages').update({ status: 'approved' }).eq('id', message.id);
@@ -280,7 +288,7 @@ export function usePixelingsChat(
     const next = requestedState ?? !activeIsLive;
     const previousLockState = lockState;
     const nextLockState = next ? { reason: '' } : { reason: reason.trim() || 'Chat temporarily locked by a moderator.' };
-    activeSetIsLive(next);
+    setIsLive(next);
     setLockState(nextLockState);
     if (!demoMode) {
       const { error } = await supabase.from('sessions').update({
@@ -290,7 +298,7 @@ export function usePixelingsChat(
         locked_by: next ? null : currentUserId,
       }).eq('id', sessionId);
       if (error) {
-        activeSetIsLive(!next);
+        setIsLive(!next);
         setLockState(previousLockState);
         throw error;
       }

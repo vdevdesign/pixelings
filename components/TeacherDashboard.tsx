@@ -19,9 +19,10 @@ export const TeacherDashboard: React.FC = () => {
   const [students, setStudents] = useState<Student[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [newStudent, setNewStudent] = useState({ name: '', code: '' });
+  const [studentSlots, setStudentSlots] = useState([{ name: '', code: '' }]);
   const [revealedCodes, setRevealedCodes] = useState<Record<string, string>>({});
   const [quickNeeds, setQuickNeeds] = useState<QuickNeed[]>([]);
+  const [pendingDelete, setPendingDelete] = useState<Student | null>(null);
 
   const fetchStudents = async () => {
     setLoading(true);
@@ -46,23 +47,52 @@ export const TeacherDashboard: React.FC = () => {
     ]);
   }, []);
 
+  const updateSlot = (index: number, field: 'name' | 'code', value: string) => {
+    setStudentSlots((slots) => slots.map((slot, i) => (i === index ? { ...slot, [field]: value } : slot)));
+  };
+
+  const addSlot = () => setStudentSlots((slots) => [...slots, { name: '', code: '' }]);
+  const removeSlot = () => setStudentSlots((slots) => (slots.length > 1 ? slots.slice(0, -1) : slots));
+
+  const generateCodes = () => {
+    setStudentSlots((slots) => slots.map((slot) => (
+      slot.code ? slot : { ...slot, code: Math.floor(100000 + Math.random() * 900000).toString() }
+    )));
+  };
+
   const handleAddStudent = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newStudent.name || !newStudent.code) return;
-    
-    setError('');
-    const { error } = await supabase.rpc('create_student_profile', {
-      first_name: newStudent.name,
-      access_code: newStudent.code
-    });
+    const valid = studentSlots.filter((slot) => slot.name && slot.code);
+    if (valid.length === 0) return;
 
-    if (error) {
-      setError(`Error adding student: ${error.message}`);
+    setError('');
+    const failures: string[] = [];
+    for (const slot of valid) {
+      const { error } = await supabase.rpc('create_student_profile', {
+        first_name: slot.name,
+        access_code: slot.code
+      });
+      if (error) failures.push(`${slot.name}: ${error.message}`);
+    }
+
+    if (failures.length > 0) {
+      setError(`Some students could not be added — ${failures.join(' | ')}`);
     } else {
       setError('');
-      setNewStudent({ name: '', code: '' });
-      fetchStudents();
+      setStudentSlots([{ name: '', code: '' }]);
     }
+    fetchStudents();
+  };
+
+  const handleDeleteStudent = async (id: string) => {
+    const student = pendingDelete;
+    setPendingDelete(null);
+    if (!student) return;
+
+    setError('');
+    const { error } = await supabase.rpc('delete_student', { student_id: id });
+    if (error) setError(`Error deleting student: ${error.message}`);
+    fetchStudents();
   };
 
   const handleShowCode = async (id: string) => {
@@ -70,6 +100,22 @@ export const TeacherDashboard: React.FC = () => {
     if (rpcError) setError(rpcError.message);
     else setRevealedCodes((prev) => ({ ...prev, [id]: (data as string | null) || 'No revealable code — reset the code once to store one.' }));
   };
+
+  const toggleAllCodes = async () => {
+    if (allRevealed) {
+      setRevealedCodes({});
+      return;
+    }
+    setError('');
+    const results = await Promise.all(students.map(async (s) => {
+      const { data, error: rpcError } = await supabase.rpc('get_student_code', { student_id: s.id });
+      if (rpcError) return [s.id, `Error`] as const;
+      return [s.id, (data as string | null) || 'No revealable code — reset the code once to store one.'] as const;
+    }));
+    setRevealedCodes(Object.fromEntries(results));
+  };
+
+  const allRevealed = students.length > 0 && students.every((s) => revealedCodes[s.id]);
 
   const handleResetCode = async (id: string) => {
     const newCode = prompt('Enter new magic access code:');
@@ -137,37 +183,43 @@ export const TeacherDashboard: React.FC = () => {
         {activeTab === 'roster' ? (
           <div className="tab-panel">
             <section className="manager-card">
-              <h2 className="card-title">Add New Student</h2>
+              <h2 className="card-title">Add New Students</h2>
+              <p className="subtitle">Add one student, or use the + / − buttons to add several at once.</p>
               <form onSubmit={handleAddStudent} className="student-form">
-                <div className="student-form-main">
-                  <div className="input-group">
-                    <label>First Name</label>
-                    <input 
-                      value={newStudent.name} 
-                      onChange={e => setNewStudent({...newStudent, name: e.target.value})}
-                      placeholder="e.g. Maya"
-                    />
+                {studentSlots.map((slot, index) => (
+                  <div key={index} className="student-form-main">
+                    <div className="input-group">
+                      <label>First Name {studentSlots.length > 1 ? `#${index + 1}` : ''}</label>
+                      <input
+                        value={slot.name}
+                        onChange={(e) => updateSlot(index, 'name', e.target.value)}
+                        placeholder="e.g. Maya"
+                      />
+                    </div>
+                    <div className="input-group">
+                      <label>Magic Code</label>
+                      <input
+                        value={slot.code}
+                        onChange={(e) => updateSlot(index, 'code', e.target.value)}
+                        placeholder="e.g. 123456"
+                      />
+                    </div>
                   </div>
-                  <div className="input-group">
-                    <label>Magic Code</label>
-                    <input 
-                      value={newStudent.code} 
-                      onChange={e => setNewStudent({...newStudent, code: e.target.value})}
-                      placeholder="e.g. 123456"
-                    />
-                  </div>
-                  <button type="submit" className="submit-btn">Add Student</button>
+                ))}
+                <div className="slot-controls">
+                  <button type="button" className="slot-btn" onClick={addSlot} aria-label="Add another student" title="Add another student">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                  </button>
+                  <button type="button" className="slot-btn" onClick={removeSlot} disabled={studentSlots.length <= 1} aria-label="Remove a student slot" title="Remove a student slot">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                  </button>
                 </div>
                 <div className="student-form-footer">
-                  <button 
-                    type="button" 
-                    className="generate-code-btn" 
-                    onClick={() => {
-                      const code = Math.floor(100000 + Math.random() * 900000).toString();
-                      setNewStudent(prev => ({ ...prev, code }));
-                    }}
-                  >
-                    🎲 Generate Random Magic Code
+                  <button type="button" className="generate-code-btn" onClick={generateCodes}>
+                    🎲 Generate Random Codes for All
+                  </button>
+                  <button type="submit" className="submit-btn">
+                    Add {studentSlots.filter((slot) => slot.name && slot.code).length || ''} Student{studentSlots.length > 1 ? 's' : ''}
                   </button>
                 </div>
               </form>
@@ -175,7 +227,12 @@ export const TeacherDashboard: React.FC = () => {
             </section>
 
             <section className="student-list-card">
-              <h2 className="card-title">Class Roster</h2>
+              <div className="roster-header">
+                <h2 className="card-title">Class Roster</h2>
+                <button onClick={() => void toggleAllCodes()} className="action-btn toggle-all-btn" disabled={loading || students.length === 0}>
+                  {allRevealed ? '🙈 Hide All Codes' : '👁 Show All Codes'}
+                </button>
+              </div>
               {loading ? <p>Loading students...</p> : (
                 <table className="student-table">
                   <thead className="table-head">
@@ -198,6 +255,14 @@ export const TeacherDashboard: React.FC = () => {
                             : <button onClick={() => void handleShowCode(s.id)} className="action-btn">Show</button>}
                           <button onClick={() => handleResetCode(s.id)} className="action-btn">Reset</button>
                           <button onClick={() => handleRegenerateCode(s.id)} className="action-btn regen-btn">🎲 Regenerate</button>
+                          <button
+                            onClick={() => setPendingDelete(s)}
+                            className="icon-btn delete-student-btn"
+                            aria-label={`Delete ${s.username}`}
+                            title={`Delete ${s.username}`}
+                          >
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>
+                          </button>
                         </td>
                       </tr>
                     ))}
@@ -245,7 +310,101 @@ export const TeacherDashboard: React.FC = () => {
         )}
       </main>
 
+      {pendingDelete && (
+        <div className="confirm-overlay" role="dialog" aria-modal="true" onClick={() => setPendingDelete(null)}>
+          <div className="confirm-dialog" onClick={(e) => e.stopPropagation()}>
+            <h3>Delete student?</h3>
+            <p>
+              This will permanently remove <strong>{pendingDelete.username}</strong> along with their wallet and inventory. This cannot be undone.
+            </p>
+            <div className="confirm-actions">
+              <button className="confirm-cancel" onClick={() => setPendingDelete(null)}>Cancel</button>
+              <button className="confirm-danger" onClick={() => void handleDeleteStudent(pendingDelete.id)}>Delete student</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <style>{`
+        .slot-controls {
+          display: flex;
+          justify-content: center;
+          gap: 0.75rem;
+          padding-bottom: 0.5rem;
+          border-bottom: 1px solid #f0f0f0;
+        }
+        .slot-btn {
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          width: 34px;
+          height: 34px;
+          border-radius: 50%;
+          border: 1px solid #ddd;
+          background: #f8f9fa;
+          color: #444;
+          cursor: pointer;
+          transition: all 0.2s;
+        }
+        .slot-btn:hover:not(:disabled) { background: #eef2f3; border-color: #ccc; }
+        .slot-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+        .student-form-footer {
+          display: flex;
+          justify-content: flex-end;
+          align-items: center;
+          gap: 1rem;
+        }
+        .icon-btn {
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          padding: 0.45rem;
+          background: #fef2f2;
+          border: 1px solid #fecaca;
+          border-radius: 6px;
+          color: #b91c1c;
+          cursor: pointer;
+          transition: all 0.2s;
+        }
+        .icon-btn:hover { background: #fee2e2; }
+        .confirm-overlay {
+          position: fixed;
+          inset: 0;
+          background: rgba(0, 0, 0, 0.45);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          z-index: 1000;
+        }
+        .confirm-dialog {
+          background: white;
+          border-radius: 16px;
+          padding: 1.75rem 2rem;
+          max-width: 420px;
+          width: calc(100% - 2rem);
+          box-shadow: 0 20px 50px rgba(0, 0, 0, 0.25);
+        }
+        .confirm-dialog h3 { margin: 0 0 0.75rem; font-size: 1.2rem; color: #222; }
+        .confirm-dialog p { margin: 0 0 1.5rem; color: #555; font-size: 0.95rem; line-height: 1.5; }
+        .confirm-actions { display: flex; justify-content: flex-end; gap: 0.75rem; }
+        .confirm-cancel {
+          padding: 0.55rem 1.1rem;
+          background: #f8f9fa;
+          border: 1px solid #ddd;
+          border-radius: 8px;
+          cursor: pointer;
+          font-weight: 500;
+        }
+        .confirm-danger {
+          padding: 0.55rem 1.1rem;
+          background: #d32f2f;
+          color: white;
+          border: none;
+          border-radius: 8px;
+          cursor: pointer;
+          font-weight: 600;
+        }
+        .confirm-danger:hover { background: #b71c1c; }
         .teacher-dashboard { 
           padding: 2rem; 
           max-width: 1100px; 
@@ -295,6 +454,19 @@ export const TeacherDashboard: React.FC = () => {
           border-bottom: 2px solid #f5f5f5;
           padding-bottom: 0.75rem;
         }
+        .roster-header {
+          display: flex;
+          align-items: flex-start;
+          justify-content: space-between;
+          gap: 1rem;
+        }
+        .roster-header .card-title { flex: 1; }
+        .toggle-all-btn {
+          margin-top: 0.25rem;
+          white-space: nowrap;
+          font-weight: 500;
+        }
+        .toggle-all-btn:disabled { opacity: 0.5; cursor: not-allowed; }
         .subtitle { color: #666; margin-bottom: 1.5rem; font-size: 0.95rem; }
         .student-form, .quick-need-form { 
           display: flex; 
@@ -307,13 +479,7 @@ export const TeacherDashboard: React.FC = () => {
           align-items: flex-end; 
           flex-wrap: wrap;
         }
-        .student-form-footer {
-          display: flex;
-          justify-content: center;
-          padding-top: 0.5rem;
-          border-top: 1px solid #f0f0f0;
-        }
-        .input-group { 
+        .input-group {  
           display: flex; 
           flex-direction: column; 
           gap: 0.5rem; 

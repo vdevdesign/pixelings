@@ -24,6 +24,13 @@ const CHAT_THEMES = [
   { id: 'style-sunset-vibes', name: 'Sunset Vibes', emoji: '☀' },
   { id: 'style-deep-space', name: 'Deep Space', emoji: '✦' },
   { id: 'style-candy-pop', name: 'Candy Pop', emoji: '♡' },
+  { id: 'style-blocky-craft', name: 'Blocky Craft', emoji: '⛏' },
+  { id: 'style-redstone-forge', name: 'Redstone Forge', emoji: '🔴' },
+  { id: 'style-kanto-league', name: 'Kanto League', emoji: '⚡' },
+  { id: 'style-team-rocket', name: 'Team Rocket', emoji: '🚀' },
+  { id: 'style-green-hills', name: 'Green Hills', emoji: '🌀' },
+  { id: 'style-star-chili-dogs', name: 'Chili Dog Nights', emoji: '⭐' },
+  { id: 'style-mushroom-speedway', name: 'Mushroom Speedway', emoji: '🍄' },
 ];
 
 const KID_FRIENDLY_EMOJIS = [
@@ -67,7 +74,6 @@ interface ChatProps {
   ownedItems?: string[];
   onChatStyleChange?: (style: string) => void;
   currentProfile?: { avatarUrl: string; backgroundUrl: string };
-  externalState?: any;
 }
 
 export const PixelingsChat: React.FC<ChatProps> = ({
@@ -86,7 +92,6 @@ export const PixelingsChat: React.FC<ChatProps> = ({
   ownedItems = [],
   onChatStyleChange,
   currentProfile = { avatarUrl: 'profile-happy-slime', backgroundUrl: 'background-happy-slime' },
-  externalState,
 }) => {
   // Block non-teachers from the Teacher Lounge
   if (room === 'Teacher Lounge' && !isModerator && !isAdmin) {
@@ -126,8 +131,7 @@ export const PixelingsChat: React.FC<ChatProps> = ({
     room,
     currentUserId,
     demoMode,
-    isModerator,
-    externalState
+    isModerator
   );
 
   const [input, setInput] = React.useState('');

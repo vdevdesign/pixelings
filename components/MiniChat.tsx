@@ -16,7 +16,7 @@ const KID_FRIENDLY_EMOJIS = [
   '🎈', '🎁', '🎊', '🎉', '🎏', '🎇', '🎆', '🧸', '🎨', '🎬'
 ];
 
-export function MiniChat({ userId, username, room, onRoomChange, demoMode = false, isModerator = false, chatCosmetics = { glow: '', tag: '', stickers: '', vfx: '', style: '' }, externalState }: { userId: string; username: string; room: ChatRoom; onRoomChange: (room: ChatRoom) => void; demoMode?: boolean; isModerator?: boolean; chatCosmetics?: { glow: string; tag: string; stickers: string; vfx: string; style: string }; externalState?: any }) {
+export function MiniChat({ userId, username, room, onRoomChange, demoMode = false, isModerator = false, chatCosmetics = { glow: '', tag: '', stickers: '', vfx: '', style: '' } }: { userId: string; username: string; room: ChatRoom; onRoomChange: (room: ChatRoom) => void; demoMode?: boolean; isModerator?: boolean; chatCosmetics?: { glow: string; tag: string; stickers: string; vfx: string; style: string } }) {
   const [open, setOpen] = React.useState(false);
   const [input, setInput] = React.useState('');
   const [showVfxMenu, setShowVfxMenu] = React.useState(false);
@@ -24,7 +24,7 @@ export function MiniChat({ userId, username, room, onRoomChange, demoMode = fals
   const vfxMenuRef = React.useRef<HTMLDivElement>(null);
   const emojiMenuRef = React.useRef<HTMLDivElement>(null);
   const messagesContainerRef = React.useRef<HTMLDivElement>(null);
-  const { messages, isLive, loading, sendMessage } = usePixelingsChat(room, userId, demoMode, isModerator, externalState);
+  const { messages, isLive, loading, sendMessage } = usePixelingsChat(room, userId, demoMode, isModerator);
   // The Teacher Lounge is always open for staff, matching the main chat.
   const roomIsLive = room === 'Teacher Lounge' && isModerator ? true : isLive;
 

@@ -14,12 +14,21 @@ const avatarShopItems: ShopItem[] = avatarItems.map((item: AvatarItem) => ({
   price: item.price,
   emoji: item.kind === 'profile' ? '🖼' : '🌌',
 }));
+// Every chat theme (style) item — mirrors the list in InventoryPage.tsx.
+export const CHAT_STYLE_IDS = ['cyber-style', 'style-pastel-dream', 'style-forest-grove', 'style-sunset-vibes', 'style-deep-space', 'style-candy-pop', 'style-blocky-craft', 'style-redstone-forge', 'style-kanto-league', 'style-team-rocket', 'style-green-hills', 'style-star-chili-dogs', 'style-mushroom-speedway'];
 const fallbackItems: ShopItem[] = [
   ...avatarShopItems,
   { id: 'neon-glow', name: 'Neon Username Glow', description: 'Give your chat name a soft electric aura.', category: 'Identity', theme: 'fun', price: 180, emoji: '◈' },
   { id: 'pixel-stickers', name: 'Pixel Sticker Set', description: 'Exclusive stickers for big reactions in chat.', category: 'Chat', theme: 'fun', price: 150, emoji: '☻' },
   { id: 'coin-vfx', name: 'Coin Collect VFX', description: 'Trigger a cheerful coin burst when you post.', category: 'Effects', theme: 'fun', price: 300, emoji: '✹' },
   { id: 'cyber-style', name: 'Cyberpunk Chat Style', description: 'A dark neon skin for your chat messages.', category: 'Chat', theme: 'fun', price: 220, emoji: '⌁' },
+  { id: 'style-blocky-craft', name: 'Blocky Craft Theme', description: 'A pixelated dirt-and-grass skin straight out of a sandbox world.', category: 'Chat', theme: 'fun', price: 250, emoji: '⛏' },
+  { id: 'style-redstone-forge', name: 'Redstone Forge Theme', description: 'Molten redstone energy powers this deep-slate workshop skin.', category: 'Chat', theme: 'fun', price: 250, emoji: '🔥' },
+  { id: 'style-kanto-league', name: 'Kanto League Theme', description: 'An electric yellow-blue skin for champion-level trainers.', category: 'Chat', theme: 'fun', price: 250, emoji: '⚡' },
+  { id: 'style-team-rocket', name: 'Team Rocket Theme', description: 'A mischievous red-and-black skin for team villains.', category: 'Chat', theme: 'fun', price: 250, emoji: '🚀' },
+  { id: 'style-green-hills', name: 'Green Hills Theme', description: 'A speedy blue-green skin inspired by rolling hillside loops.', category: 'Chat', theme: 'fun', price: 250, emoji: '🌀' },
+  { id: 'style-star-chili-dogs', name: 'Chili Dog Nights Theme', description: 'A golden starry night skin for fast heroes with big appetites.', category: 'Chat', theme: 'fun', price: 250, emoji: '⭐' },
+  { id: 'style-mushroom-speedway', name: 'Mushroom Speedway Theme', description: 'A kart-racing red mushroom skin with rainbow-road sparkles.', category: 'Chat', theme: 'fun', price: 250, emoji: '🍄' },
   // Wearable chat titles (the old generic VIP title was retired).
   { id: 'tag-pixel-coin-collector', name: 'Pixel Coin Collector', description: 'Earned by hoarding every last pixel coin on the arcade floor.', category: 'Tags', theme: 'fun', price: 100, emoji: '🪙' },
   { id: 'tag-stardust-acquirer', name: 'Stardust Acquirer', description: 'A cosmic traveler who has gathered glowing remnants from across the server.', category: 'Tags', theme: 'fun', price: 100, emoji: '🌠' },
@@ -58,7 +67,9 @@ export function StardustShop({
   const owned = ownedItems;
   const setOwned = onOwnedChange;
   const [notice, setNotice] = React.useState('');
-  const [inventoryOpen, setInventoryOpen] = React.useState(false);
+  // Sections with more than this many items collapse behind a "View all" toggle.
+  const COLLAPSED_LIMIT = 8;
+  const [expandedGroups, setExpandedGroups] = React.useState<Record<string, boolean>>({});
 
   React.useEffect(() => {
     if (demoMode) return;
@@ -115,7 +126,6 @@ export function StardustShop({
     class: shopItems.filter((item) => themeOf(item) === 'class').length,
     fun: shopItems.filter((item) => themeOf(item) === 'fun').length,
   };
-  const ownedShopItems = shopItems.filter((item) => owned.includes(item.id));
   // Claim everything still unowned. Teachers claim for free; in preview mode the
   // grants are client-side only since there is no real account.
   const [claimingAll, setClaimingAll] = React.useState(false);
@@ -151,12 +161,12 @@ export function StardustShop({
   // Group the shop by item type. Avatar items get their own sections so the
   // profile pictures and backgrounds read as two distinct collections.
   const shopGroups = [
-    { label: 'PROFILE PICTURES', items: filteredItems.filter((item) => item.id.startsWith('profile-')) },
-    { label: 'PROFILE BACKGROUNDS', items: filteredItems.filter((item) => item.id.startsWith('background-')) },
+    { label: 'Profile Pictures', items: filteredItems.filter((item) => item.id.startsWith('profile-')) },
+    { label: 'Profile Backgrounds', items: filteredItems.filter((item) => item.id.startsWith('background-')) },
     { label: 'IDENTITY', items: filteredItems.filter((item) => item.category === 'Identity' && !item.id.startsWith('profile-') && !item.id.startsWith('background-')) },
-    { label: 'CHAT', items: filteredItems.filter((item) => item.category === 'Chat') },
-    { label: 'EFFECTS', items: filteredItems.filter((item) => item.category === 'Effects') },
-    { label: 'TAGS', items: filteredItems.filter((item) => item.category === 'Tags') },
+    { label: 'Chat', items: filteredItems.filter((item) => item.category === 'Chat') },
+    { label: 'Effects', items: filteredItems.filter((item) => item.category === 'Effects') },
+    { label: 'Tags', items: filteredItems.filter((item) => item.category === 'Tags') },
   ].filter((group) => group.items.length > 0);
   const avatarFor = (id: string): AvatarItem | undefined => avatarItemById.get(id);
   const toggleActive = async (item: ShopItem) => {
@@ -173,19 +183,28 @@ export function StardustShop({
       setNotice(`${item.name} is now ${next ? 'public' : 'hidden'}.`);
     }
   };
-  return <section className="shop-section"><div className="section-heading"><div><div className="card-kicker">THE STARDUST SHOP</div><h2>Flex your <em>wealth.</em></h2></div><div className="shop-heading-actions">{(canManage || demoMode) && claimableCount > 0 && <button className="inventory-toggle" onClick={claimAll} disabled={claimingAll}>{claimingAll ? 'Claiming…' : `Claim all · ${claimableCount}`}</button>}<button className="inventory-toggle" onClick={() => setInventoryOpen((value) => !value)}>Inventory · {owned.length}</button><div className="wallet">✦ <strong>{balance ?? 0}</strong><span>STARDUST</span></div></div></div><p className="section-copy">Spend your sparkle on chat upgrades, identity flexes, and tiny bits of delightful chaos.</p>
-<div className="theme-filter">
-  <button className={`theme-filter-btn ${themeFilter === 'all' ? 'active' : ''}`} onClick={() => setThemeFilter('all')}>All · {themeCounts.all}</button>
-  <button className={`theme-filter-btn ${themeFilter === 'class' ? 'active' : ''}`} onClick={() => setThemeFilter('class')}>🎓 Class · {themeCounts.class}</button>
-  <button className={`theme-filter-btn ${themeFilter === 'fun' ? 'active' : ''}`} onClick={() => setThemeFilter('fun')}>✨ Fun · {themeCounts.fun}</button>
-</div>
-{inventoryOpen && <div className="inventory-panel"><div className="card-kicker">YOUR COLLECTION</div>{ownedShopItems.length ? ownedShopItems.map((item) => { const avatar = avatarFor(item.id); return <span className="inventory-item" key={item.id}>{avatar ? <img className="inventory-item-thumb" src={avatar.src} alt={item.name} loading="lazy" /> : item.emoji} {item.name}</span>; }) : <span className="inventory-empty">Your inventory is waiting for its first sparkle.</span>}</div>}{/* Shop items are grouped by type: Profile pictures, Profile backgrounds, then the other categories. */}
-      {shopGroups.map((group) => <React.Fragment key={group.label}>
-        <div className="card-kicker shop-group-kicker">{group.label}</div>
-        <div className="shop-grid">{group.items.map((item) => <article className={`shop-item ${(item.active ?? true) ? '' : 'shop-item-hidden'}`} key={item.id}><div className="item-icon">{avatarFor(item.id) ? <img className="shop-item-thumb" src={avatarFor(item.id)!.src} alt={item.name} loading="lazy" /> : item.emoji}</div><div className="item-category">{item.category}</div><h3>{item.name}</h3><p>{item.description}</p>
+  return <section className="shop-section">
+    <div className="shop-toolbar">
+      <div className="theme-filter">
+        <button className={`theme-filter-btn ${themeFilter === 'all' ? 'active' : ''}`} onClick={() => setThemeFilter('all')}>All · {themeCounts.all}</button>
+        <button className={`theme-filter-btn ${themeFilter === 'class' ? 'active' : ''}`} onClick={() => setThemeFilter('class')}>🎓 Class · {themeCounts.class}</button>
+        <button className={`theme-filter-btn ${themeFilter === 'fun' ? 'active' : ''}`} onClick={() => setThemeFilter('fun')}>✨ Fun · {themeCounts.fun}</button>
+      </div>
+      <div className="shop-heading-actions">{(canManage || demoMode) && claimableCount > 0 && <button className="inventory-toggle" onClick={claimAll} disabled={claimingAll}>{claimingAll ? 'Claiming…' : `Claim all · ${claimableCount}`}</button>}<div className="wallet">✦ <strong>{balance ?? 0}</strong><span>STARDUST</span></div></div>
+    </div>
+    {/* Shop items are grouped by type: Profile pictures, Profile backgrounds, then the other categories. */}
+      {shopGroups.map((group) => {
+        const collapsed = group.items.length > COLLAPSED_LIMIT && !expandedGroups[group.label];
+        const visibleItems = collapsed ? group.items.slice(0, COLLAPSED_LIMIT) : group.items;
+        const hiddenCount = group.items.length - COLLAPSED_LIMIT;
+        return <React.Fragment key={group.label}>
+        <h3 className="shop-group-heading">{group.label}</h3>
+        <div className="shop-grid">{visibleItems.map((item) => { const avatar = avatarFor(item.id); return <article className={`shop-item ${avatar ? `shop-avatar-item shop-avatar-${avatar.kind}` : ''} ${(item.active ?? true) ? '' : 'shop-item-hidden'}`} key={item.id}><div className="item-icon">{avatar ? <img className="shop-item-thumb" src={avatar.src} alt={item.name} loading="lazy" /> : item.emoji}</div><h4>{item.name}</h4>
           {item.id === 'neon-glow' && <div className="item-preview"><span className="preview-glow-name">MissV</span></div>}
-          {item.id === 'cyber-style' && <div className="item-preview"><div className="preview-cyber-msg">&gt; hello world_</div></div>}
           {item.id === 'coin-vfx' && <div className="item-preview"><div className="preview-coin-burst"><span>🪙</span><span>🪙</span><span>🪙</span></div></div>}
-        <button onClick={() => buy(item)} disabled={owned.includes(item.id)}>{owned.includes(item.id) ? 'Owned ✓' : (canManage || demoMode) ? 'Take it · Free' : `Buy · ${item.price} ✦`}</button>{canManage && <button className="item-visibility-toggle" onClick={() => toggleActive(item)}>{(item.active ?? true) ? 'Public 👁' : 'Hidden 🙈'}</button>}</article>)}</div>
-      </React.Fragment>)}{notice && <div className="shop-notice">{notice}</div>}</section>;
+          {CHAT_STYLE_IDS.includes(item.id) && <div className="item-preview"><div className={`preview-theme-msg preview-${item.id}`}>hey pixelings! 👋</div></div>}
+        <button onClick={() => buy(item)} disabled={owned.includes(item.id)}>{owned.includes(item.id) ? 'Owned ✓' : (canManage || demoMode) ? 'Take it · Free' : `Buy · ${item.price} ✦`}</button>{canManage && <button className="item-visibility-toggle" onClick={() => toggleActive(item)}>{(item.active ?? true) ? 'Public 👁' : 'Hidden 🙈'}</button>}</article>; })}</div>
+        {group.items.length > COLLAPSED_LIMIT && <button className="view-all-btn" onClick={() => setExpandedGroups((state) => ({ ...state, [group.label]: !state[group.label] }))}>{collapsed ? `View all ${hiddenCount} more · ${group.items.length}` : 'Show less'}</button>}
+      </React.Fragment>;
+      })}{notice && <div className="shop-notice">{notice}</div>}</section>;
 }

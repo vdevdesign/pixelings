@@ -69,11 +69,6 @@ function App() {
   const [manualChatOverrides, setManualChatOverrides] = React.useState<Record<string, boolean>>({});
   const kidLoginInProgress = React.useRef(false);
 
-  // Shared chat state lifted to App level to sync Main Chat and Mini Chat
-  const [sharedMessages, setSharedMessages] = React.useState<import('../src/hooks/usePixelingsChat').Message[]>([]);
-  const [sharedIsLive, setSharedIsLive] = React.useState<boolean>(false);
-  const [sharedLoading, setSharedLoading] = React.useState<boolean>(true);
-
   const loadAuthenticatedUser = async (session: { user: { id: string } } | null) => {
     if (!session?.user || kidLoginInProgress.current) return;
     setAuthUserId(session.user.id);
@@ -500,58 +495,24 @@ function App() {
           {activeTab === 'home' ? <>
           <section className="hero home-hero">
             <h1>Welcome <em>Pixelings!</em></h1>
-            <p className="hero-copy">A cozy little corner to chat and spend your Stardust.</p>
           </section>
-          <section className="home-grid">
-            <article className="welcome-card feature-card">
-              <div className="card-kicker">TODAY IN THE LOUNGE</div>
-              <h2>Make something <em>sparkle.</em></h2>
-              <p>Drop into chat or show off your collection in the Stardust Shop.</p>
-              <button className="primary-action" onClick={() => setActiveTab('chat')}>Open the chat →</button>
-            </article>
-          </section>
+          <button className="primary-action home-chat-action" onClick={() => setActiveTab('chat')}>Open chat</button>
+          <div className="home-sections-grid">
           <section className="home-section">
             <div className="section-heading home-section-heading">
-              <div>
-                <div className="card-kicker">PIXELS TECH LAB</div>
-                <h2>PTL <em>News</em></h2>
-              </div>
-              <span className="section-label">LATEST UPDATES</span>
+              <h2>PTL <em>News</em></h2>
             </div>
             <p className="section-copy">Short updates, announcements, and useful things happening around Pixels Tech Lab.</p>
-            <div className="legacy-static"><div className="news-grid">
-              <article className="news-card">
-                <div className="news-meta">LAB NOTE · OCT 14, 2026</div>
-                <h3>Welcome to the new Pixelings lounge</h3>
-                <p>Chat, share what you are building, and keep an eye on this space for new lab updates.</p>
-              </article>
-              <article className="news-card">
-                <div className="news-meta">COMING SOON</div>
-                <h3>More ways to show your work</h3>
-                <p>We are planning new ways for Pixelings to spotlight projects, ideas, and creative experiments.</p>
-              </article>
-            </div></div>
             <PtlPosts section="news" canEdit={isTeacher && Boolean(authUserId)} userId={authUserId} />
           </section>
           <section className="home-section tales-section">
             <div className="section-heading home-section-heading">
-              <div>
-                <div className="card-kicker">BEHIND THE BUILD</div>
-                <h2>Tales from the <em>Tech Lab</em></h2>
-              </div>
-              <span className="section-label">STORIES & SPOTLIGHTS</span>
+              <h2>Tales from the <em>Tech Lab</em></h2>
             </div>
             <p className="section-copy">A home for behind-the-scenes stories, project spotlights, creative lessons, and the people who make the lab interesting.</p>
-            <div className="legacy-static"><div className="story-card">
-              <div className="story-icon">✦</div>
-              <div>
-                <div className="news-meta">THE IDEA BEHIND THE SECTION</div>
-                <h3>Show the messy, clever, human side of making things.</h3>
-                <p>Tales can feature a Pixelings project, a quick lesson learned, an interview, or a peek at how something in the lab came together.</p>
-              </div>
-            </div></div>
             <PtlPosts section="tales" canEdit={isTeacher && Boolean(authUserId)} userId={authUserId} />
           </section>
+          </div>
           </>
           : activeTab === 'chat' ? <>
           <PixelingsChat  
@@ -576,28 +537,20 @@ function App() {
             allChatsLocked={allChatsLocked} 
             manualChatOverride={manualChatOverrides[chatRoom]} 
             onManualStatusChange={(live) => setManualChatOverrides((overrides) => ({ ...overrides, [chatRoom]: live }))}
-            externalState={{
-              messages: sharedMessages,
-              setMessages: setSharedMessages,
-              isLive: sharedIsLive,
-              setIsLive: setSharedIsLive,
-              loading: sharedLoading,
-              setLoading: setSharedLoading
-            }}
           />
           <p className="demo-note">Preview mode · moderation is required for flagged messages</p>
           </>
           : activeTab === 'games' ? <>
-            <section className="hero"><h1>Mini <em>Games</em></h1><p className="hero-copy">Take a quick break, test your memory, and collect a little Stardust.</p></section>
-            <RuneDuelMatch />
+            <section className="hero"><h1>Cosmic <em>Arcade</em></h1></section>
             <MiniTrivia userId={userId} demoMode={isInstantPreview} />
+            <RuneDuelMatch />
           </>
           : activeTab === 'inventory' ? <>
-            <section className="hero"><h1>My <em>Inventory</em></h1><p className="hero-copy">Equip your profile picture and chat cosmetics from everything you own.</p></section>
+            <section className="hero"><h1>My <em>Inventory</em></h1></section>
             <InventoryPage accountId={authUserId} demoMode={isInstantPreview} balance={walletBalance} ownedItems={ownedItems} onOwnedChange={setOwnedItems} onBalanceChange={setWalletBalance} onProfileChange={(avatarId, backgroundId) => { setProfileAvatarId(avatarId); setProfileBackgroundId(backgroundId); }} onChatCosmeticsChange={setChatCosmetics} />
           </>
           : <>
-            <section className="hero"><h1>Stardust <em>Shop</em></h1><p className="hero-copy">Spend your sparkle on chat upgrades, identity flexes, and delightful chaos.</p></section>
+            <section className="hero"><h1>Stardust <em>Shop</em></h1></section>
             <StardustShop accountId={authUserId} demoMode={isInstantPreview} canManage={isTeacher} balance={walletBalance} ownedItems={ownedItems} onOwnedChange={setOwnedItems} onBalanceChange={setWalletBalance} />
           </>}
           {activeTab !== 'chat' && <MiniChat 
@@ -608,14 +561,6 @@ function App() {
             isModerator={isTeacher || role !== 'computer'}
             chatCosmetics={chatCosmetics}  
             demoMode={isInstantPreview}
-            externalState={{
-              messages: sharedMessages,
-              setMessages: setSharedMessages,
-              isLive: sharedIsLive,
-              setIsLive: setSharedIsLive,
-              loading: sharedLoading,
-              setLoading: setSharedLoading
-            }}
           />}
         </>
       )}

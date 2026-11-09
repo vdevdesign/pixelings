@@ -29,6 +29,12 @@ update public.stardust_shop set theme = 'fun';
 -- Retire the generic VIP title (kept as an inactive row: inventory rows
 -- reference it via foreign key, so the shop row cannot be hard-deleted).
 update public.stardust_shop set active = false where id = 'vip-title';
+-- Hide profile pictures whose bundled artwork does not exist, so students
+-- never buy an item that cannot be shown on their profile.
+update public.stardust_shop set active = false where id in (
+  'profile-baby-dragon', 'profile-blushy-ghost', 'profile-chomp-monster',
+  'profile-little-night-bat'
+);
 create table if not exists public.stardust_wallets (
   user_id uuid primary key references auth.users(id) on delete cascade,
   balance integer not null default 650 check (balance >= 0),
@@ -74,7 +80,18 @@ insert into public.stardust_shop (id, name, description, category, price, emoji,
  ('style-sunset-vibes', 'Sunset Vibes Theme', 'A warm orange-pink skin for your chat messages.', 'Chat', 220, '☀', 9),
  ('style-deep-space', 'Deep Space Theme', 'A starry midnight skin for your chat messages.', 'Chat', 220, '✦', 10),
  ('style-candy-pop', 'Candy Pop Theme', 'A bubbly pink skin for your chat messages.', 'Chat', 220, '♡', 11),
- -- Profile pictures (16) — each one is its own purchasable shop item.
+ -- Game-inspired chat themes (Minecraft, creature-collecting, speedster vibes).
+ ('style-blocky-craft', 'Blocky Craft Theme', 'A pixelated dirt-and-grass skin straight out of a sandbox world.', 'Chat', 250, '⛏', 12),
+ ('style-redstone-forge', 'Redstone Forge Theme', 'Molten redstone energy powers this deep-slate workshop skin.', 'Chat', 250, '🔥', 13),
+ ('style-kanto-league', 'Kanto League Theme', 'An electric yellow-blue skin for champion-level trainers.', 'Chat', 250, '⚡', 14),
+ ('style-team-rocket', 'Team Rocket Theme', 'A mischievous red-and-black skin for team villains.', 'Chat', 250, '🚀', 15),
+ ('style-green-hills', 'Green Hills Theme', 'A speedy blue-green skin inspired by rolling hillside loops.', 'Chat', 250, '🌀', 16),
+ ('style-star-chili-dogs', 'Chili Dog Nights Theme', 'A golden starry night skin for fast heroes with big appetites.', 'Chat', 250, '⭐', 17),
+ ('style-mushroom-speedway', 'Mushroom Speedway Theme', 'A kart-racing red mushroom skin with rainbow-road sparkles.', 'Chat', 250, '🍄', 18),
+ -- Profile pictures — each one is its own purchasable shop item. Rows whose
+ -- bundled artwork does not exist (baby dragon, blushy ghost, chomp monster,
+ -- little night bat) are kept inactive instead of removed because inventory
+ -- rows reference them by foreign key.
  ('profile-baby-dragon', 'Baby Dragon', 'A baby dragon profile picture for your Pixelings profile.', 'Identity', 120, '🐲', 10),
  ('profile-bamboo-panda', 'Bamboo Panda', 'A bamboo panda profile picture for your Pixelings profile.', 'Identity', 120, '🐼', 11),
  ('profile-blushy-ghost', 'Blushy Ghost', 'A blushy ghost profile picture for your Pixelings profile.', 'Identity', 120, '👻', 12),

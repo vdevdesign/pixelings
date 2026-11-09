@@ -8,6 +8,7 @@ create table if not exists public.ptl_posts (
   body text not null check (char_length(trim(body)) between 1 and 5000),
   image_path text,
   image_alt text,
+  is_pinned boolean not null default false,
   published_at timestamptz not null default now(),
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
@@ -15,8 +16,13 @@ create table if not exists public.ptl_posts (
   updated_by uuid references auth.users(id) on delete set null
 );
 
+alter table public.ptl_posts add column if not exists is_pinned boolean not null default false;
+
 create index if not exists ptl_posts_section_published_idx
   on public.ptl_posts(section, published_at desc);
+
+create index if not exists ptl_posts_section_pinned_published_idx
+  on public.ptl_posts(section, is_pinned desc, published_at desc);
 
 create or replace function public.touch_ptl_post()
 returns trigger language plpgsql
@@ -101,3 +107,12 @@ select 'tales', 'Show the messy, clever, human side of making things.',
   'Tales can feature a Pixelings project, a quick lesson learned, an interview, or a peek at how something in the lab came together.',
   'Tech Lab story spotlight'
 where not exists (select 1 from public.ptl_posts where section = 'tales');
+
+insert into public.ptl_posts (section, title, body, image_alt)
+select 'news', 'More ways to show your work',
+  'We are planning new ways for Pixelings to spotlight projects, ideas, and creative experiments.',
+  'More ways to show your work'
+where not exists (
+  select 1 from public.ptl_posts
+  where section = 'news' and title = 'More ways to show your work'
+);
