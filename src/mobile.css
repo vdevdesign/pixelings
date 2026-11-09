@@ -363,4 +363,24 @@
     flex: 1;
     min-height: 40px;
   }
+
+  .mini-chat.chat-card {
+    right: 12px;
+    bottom: 12px;
+    width: calc(100vw - 24px);
+  }
+
+  .quick-needs-control {
+    bottom: 12px;
+    left: 12px;
+  }
+
+  /* Mobile composer: pickers + send on one compact row, input on its own row. */
+  .chat-card .message-form { flex-wrap: wrap; }
+  .chat-card .composer-pickers { order: 1; }
+  .chat-card .send-button { order: 2; flex: 1 1 auto; }
+  .chat-card .message-input { order: 3; flex: 1 1 100%; }
+  .vfx-menu-toggle { width: 34px; height: 34px; }
+  .chat-gif-panel { left: 0; right: auto; }
+  .vfx-menu { left: 0; right: auto; }
 }

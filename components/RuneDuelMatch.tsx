@@ -1,4 +1,5 @@
 import React, { useState, useCallback } from 'react';
+import { supabase } from '../lib/supabaseClient';
 
 const ASSETS = {
   bg: '/assets/rune-duel-card-bg.png',
@@ -33,24 +34,44 @@ function makeDeck(): Card[] {
   }));
 }
 
-export function RuneDuelMatch({ onEarnStardust }: { onEarnStardust?: (amount: number) => void }) {
+export function RuneDuelMatch({ onBalanceChange }: { onBalanceChange?: (delta: number) => void }) {
   const [cards, setCards] = React.useState<Card[]>(makeDeck);
   const [selected, setSelected] = React.useState<number[]>([]);
-  const [stardust, setStardust] = React.useState(0);
-  const [message, setMessage] = React.useState('Choose two runes to begin the duel.');
+  const [roundEarned, setRoundEarned] = React.useState(0);
+  const [message, setMessage] = React.useState('Choose two runes to start matching!');
   const [busy, setBusy] = React.useState(false);
+  const [showReward, setShowReward] = React.useState(false);
 
-  const award = React.useCallback((amount: number) => {
-    setStardust((value) => value + amount);
-    onEarnStardust?.(amount);
-  }, [onEarnStardust]);
+  React.useEffect(() => {
+    if (cards.length > 0 && cards.every((card) => card.matched)) {
+      setShowReward(true);
+      const timer = window.setTimeout(() => setShowReward(false), 8000);
+      return () => window.clearTimeout(timer);
+    }
+    setShowReward(false);
+  }, [cards]);
+
+  // Rewards are granted server-side with a 500/day cap for this game; the
+  // header counter is gone — the HUD and wallet update via the RPC result.
+  const award = React.useCallback(async (amount: number) => {
+    setRoundEarned((value) => value + amount);
+    onBalanceChange?.(amount);
+    const { data, error } = await supabase.rpc('award_game_stardust', { game: 'elemental', requested: amount });
+    if (error) {
+      setMessage('Could not save your reward. Please tell your teacher.');
+      return;
+    }
+    const result = Array.isArray(data) ? data[0] : data as { granted: number; daily_total: number; cap: number };
+    if (result && Number(result.granted) === 0) setMessage('Daily Stardust limit reached for this game — keep playing for fun!');
+  }, [onBalanceChange]);
 
   const restart = () => {
     setCards(makeDeck());
     setSelected([]);
-    setStardust(0);
+    setRoundEarned(0);
     setBusy(false);
-    setMessage('Choose two runes to begin the duel.');
+    setShowReward(false);
+    setMessage('Choose two runes to start matching!');
   };
 
   const choose = (id: number) => {
@@ -72,12 +93,12 @@ export function RuneDuelMatch({ onEarnStardust }: { onEarnStardust?: (amount: nu
     window.setTimeout(() => {
       if (isPair) {
         setCards((current) => current.map((item) => next.includes(item.id) ? { ...item, matched: true } : item));
-        award(50);
-        setMessage(`Perfect ${first.rune} pair! +50 Stardust.`);
+        void award(10);
+        setMessage(`Perfect ${first.rune} pair! +10 Stardust.`);
       } else if (winner) {
         setCards((current) => current.map((item) => next.includes(item.id) ? { ...item, flipped: false, clash: true } : item));
-        award(25);
-        setMessage(`${winner.rune.toUpperCase()} defeats its rival! +25 Stardust.`);
+        void award(10);
+        setMessage(`${winner.rune.toUpperCase()} defeats its rival! +10 Stardust.`);
         window.setTimeout(() => setCards((current) => current.map((item) => ({ ...item, clash: false }))), 650);
       } else {
         setCards((current) => current.map((item) => next.includes(item.id) ? { ...item, flipped: false } : item));
@@ -90,8 +111,8 @@ export function RuneDuelMatch({ onEarnStardust }: { onEarnStardust?: (amount: nu
 
   return <section className="rune-duel" style={{ backgroundImage: `url(${ASSETS.bg})` }}>
     <div className="rune-duel-header">
-      <div><div className="card-kicker">COSMIC ARCADE / RUNE DUEL</div><h2>Elemental <em>match</em></h2><p>{message}</p></div>
-      <div className="rune-score"><span>STARDUST</span><strong>✦ {stardust}</strong></div>
+      <div><h2>Elemental <em>match</em></h2><p>Choose two runes to start matching!</p></div>
+
     </div>
     <div className="rune-grid" aria-label="Rune duel board">
       {cards.map((card) => <button key={card.id} className={`rune-card rune-${card.rune} ${card.flipped ? 'is-flipped' : ''} ${card.matched ? 'is-matched' : ''} ${card.clash ? 'is-clashing' : ''}`} onClick={() => choose(card.id)} disabled={card.matched || busy} aria-label={card.flipped ? `${card.rune} rune` : 'Sealed rune'}>
@@ -99,6 +120,11 @@ export function RuneDuelMatch({ onEarnStardust }: { onEarnStardust?: (amount: nu
         <span className="rune-card-face rune-card-front"><img src={ASSETS.runes[card.rune]} alt="" onError={(event) => { event.currentTarget.style.display = 'none'; }} /><span>{RUNE_SYMBOLS[card.rune]}</span><b>{card.rune}</b></span>
       </button>)}
     </div>
-    <button className="rune-restart" onClick={restart}>Restart duel</button>
+    <button className="rune-restart" onClick={restart}>Restart</button>
+    {showReward && <div className="stardust-reward-pop" role="status">
+      <span className="reward-star">✦</span>
+      <div><strong>Round complete!</strong><span>You earned <b>{roundEarned}</b> Stardust this match.</span></div>
+      <button className="reward-close" onClick={() => setShowReward(false)} aria-label="Dismiss">✕</button>
+    </div>}
   </section>;
 }

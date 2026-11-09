@@ -19,20 +19,42 @@ const KID_FRIENDLY_EMOJIS = [
 export function MiniChat({ userId, username, room, onRoomChange, demoMode = false, isModerator = false, chatCosmetics = { glow: '', tag: '', stickers: '', vfx: '', style: '' } }: { userId: string; username: string; room: ChatRoom; onRoomChange: (room: ChatRoom) => void; demoMode?: boolean; isModerator?: boolean; chatCosmetics?: { glow: string; tag: string; stickers: string; vfx: string; style: string } }) {
   const [open, setOpen] = React.useState(false);
   const [input, setInput] = React.useState('');
+  const [sendError, setSendError] = React.useState('');
   const [showVfxMenu, setShowVfxMenu] = React.useState(false);
   const [showEmojiMenu, setShowEmojiMenu] = React.useState(false);
   const vfxMenuRef = React.useRef<HTMLDivElement>(null);
   const emojiMenuRef = React.useRef<HTMLDivElement>(null);
   const messagesContainerRef = React.useRef<HTMLDivElement>(null);
-  const { messages, isLive, loading, sendMessage } = usePixelingsChat(room, userId, demoMode, isModerator);
-  // The Teacher Lounge is always open for staff, matching the main chat.
+  const pendingScrollHeight = React.useRef<number | null>(null);
+  const shouldFollowMessages = React.useRef(true);
+  const { messages, isLive, loading, chatLoadError, historyError, hasMoreMessages, loadingOlderMessages, loadOlderMessages, sendMessage } = usePixelingsChat(room, userId, demoMode, isModerator);
   const roomIsLive = room === 'Teacher Lounge' && isModerator ? true : isLive;
+  const canPost = roomIsLive || isModerator;
+  const visibleRooms = CHAT_ROOMS.filter((option) => option !== 'Teacher Lounge' || isModerator);
 
   React.useEffect(() => {
-    if (messagesContainerRef.current && open) {
-      messagesContainerRef.current.scrollTop = messagesContainerRef.current.scrollHeight;
+    if (room === 'Teacher Lounge' && !isModerator) onRoomChange('Blender');
+  }, [room, isModerator, onRoomChange]);
+
+  React.useLayoutEffect(() => {
+    const container = messagesContainerRef.current;
+    if (!container || !open) return;
+    if (pendingScrollHeight.current !== null) {
+      container.scrollTop += container.scrollHeight - pendingScrollHeight.current;
+      pendingScrollHeight.current = null;
+    } else if (shouldFollowMessages.current) {
+      container.scrollTop = container.scrollHeight;
     }
   }, [messages, open]);
+
+  const handleMessagesScroll = (event: React.UIEvent<HTMLDivElement>) => {
+    const container = event.currentTarget;
+    shouldFollowMessages.current = container.scrollHeight - container.scrollTop <= container.clientHeight + 40;
+    if (container.scrollTop <= 24 && hasMoreMessages && !loadingOlderMessages) {
+      pendingScrollHeight.current = container.scrollHeight;
+      void loadOlderMessages();
+    }
+  };
 
   React.useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
@@ -49,9 +71,15 @@ export function MiniChat({ userId, username, room, onRoomChange, demoMode = fals
 
   const handleSend = async (event: React.FormEvent) => {
     event.preventDefault();
-    if (!input.trim() || !roomIsLive) return;
-    await sendMessage(input.trim(), undefined, username);
-    setInput('');
+    if (!input.trim() || !canPost || chatLoadError) return;
+    try {
+      await sendMessage(input.trim(), undefined, username);
+      setInput('');
+      setSendError('');
+    } catch (error) {
+      console.error('Failed to send mini chat message:', error);
+      setSendError(error instanceof Error ? error.message : 'Could not send that message.');
+    }
   };
 
   const insertEmoji = async (emoji: string) => {
@@ -59,28 +87,45 @@ export function MiniChat({ userId, username, room, onRoomChange, demoMode = fals
     setInput(nextInput);
     setShowEmojiMenu(false);
     if (emoji === COIN_EMOJI) {
-      await sendMessage(nextInput, undefined, username);
-      setInput('');
+      try {
+        await sendMessage(nextInput, undefined, username);
+        setInput('');
+        setSendError('');
+      } catch (error) {
+        console.error('Failed to send mini chat effect:', error);
+        setSendError(error instanceof Error ? error.message : 'Could not send that effect.');
+      }
     }
   };
 
   const handleVfxSelect = async (emoji: string) => {
     setShowVfxMenu(false);
     setShowEmojiMenu(false);
-    await sendMessage(emoji, undefined, username);
+    try {
+      await sendMessage(emoji, undefined, username);
+      setSendError('');
+    } catch (error) {
+      console.error('Failed to send mini chat effect:', error);
+      setSendError(error instanceof Error ? error.message : 'Could not send that effect.');
+    }
   };
 
-  return <aside className={`mini-chat ${open ? 'open' : ''}`} aria-label="Mini chat">
+  return <aside className={`mini-chat chat-card theme-${chatCosmetics.style || 'classic'} ${open ? 'open' : ''}`} aria-label="Mini chat">
     {open ? <>
-      <div className="mini-chat-header"><div><strong>{room}</strong><span>{roomIsLive ? 'LIVE' : 'LOCKED'}</span></div><button onClick={() => setOpen(false)} aria-label="Minimize chat">−</button></div>
-      <label className="mini-chat-room">Room<select value={room} onChange={(event) => onRoomChange(event.target.value as ChatRoom)}>{CHAT_ROOMS.map((option) => <option key={option} value={option}>{option}</option>)}</select></label>
-      <div className="mini-chat-messages" ref={messagesContainerRef}>{loading ? <p className="empty">Loading chat...</p> : messages.slice(-8).map((message) => { 
+      <div className="mini-chat-header chat-header"><div className="chat-title"><h3>{room}</h3><span className={`status-label ${roomIsLive ? 'live' : 'locked'}`}>{roomIsLive ? 'LIVE' : 'LOCKED'}</span></div><button onClick={() => setOpen(false)} aria-label="Minimize chat">−</button></div>
+      <label className="mini-chat-room">Room<select className="whisper-select message-input" value={room} onChange={(event) => onRoomChange(event.target.value as ChatRoom)}>{visibleRooms.map((option) => <option key={option} value={option}>{option}</option>)}</select></label>
+      {chatLoadError && <p className="chat-load-error" role="alert">{chatLoadError}</p>}
+      {sendError && <p className="chat-load-error" role="alert">{sendError}</p>}
+      <div className="mini-chat-messages messages" ref={messagesContainerRef} onScroll={handleMessagesScroll}>
+        {loadingOlderMessages && <p className="history-loading">Loading earlier messages…</p>}
+        {historyError && <p className="history-error" role="alert">{historyError}</p>}
+        {loading ? <p className="empty">Loading chat...</p> : messages.map((message) => { 
         const isMine = message.sender_id === userId; 
         return (
-          <div className={`mini-chat-message ${isMine ? 'mine' : ''}`} key={message.id}>
+          <div className={`mini-chat-message message ${isMine ? 'mine' : ''}`} key={message.id}>
             <b className={isMine && chatCosmetics.glow ? 'chat-name-glow' : ''}>{message.sender_name}</b>
             {isMine && chatCosmetics.tag && <span className="equipped-chat-tag">{chatCosmetics.tag.replace(/^tag-/, '').replace(/-/g, ' ')}</span>}
-            <p className={isMine && chatCosmetics.style === 'cyber-style' ? 'cyber-bubble' : ''}>
+            <p className={`bubble ${isMine ? 'mine' : ''} ${isMine && chatCosmetics.style === 'cyber-style' ? 'cyber-bubble' : ''}`}>
               {message.content}
               {message.content.includes('\u{1FA99}') && <span className="coin-burst" aria-label="coin effect"><span>🪙</span><span>🪙</span><span>🪙</span><span>🪙</span><span>🪙</span><span>🪙</span><span>🪙</span></span>}
             </p>
@@ -103,11 +148,12 @@ export function MiniChat({ userId, username, room, onRoomChange, demoMode = fals
           </div>
         </div>
       </div>}
-      <form className="mini-chat-form" onSubmit={handleSend}>
-        <button type="button" className="mini-chat-vfx-btn" onClick={() => { setShowVfxMenu(!showVfxMenu); setShowEmojiMenu(false); }} disabled={!isLive}>✹</button>
-        <button type="button" className="mini-chat-emoji-btn" onClick={() => { setShowEmojiMenu(!showEmojiMenu); setShowVfxMenu(false); }} disabled={!isLive}>✨</button>
-        <input value={input} onChange={(event) => setInput(event.target.value)} placeholder={isLive ? 'Message the lounge...' : 'Chat is locked'} disabled={!isLive} />
-        <button type="submit" disabled={!isLive || !input.trim()}>Send</button>
+      <form className="mini-chat-form composer" onSubmit={handleSend}>
+        <button type="button" className="mini-chat-vfx-btn" onClick={() => { setShowVfxMenu(!showVfxMenu); setShowEmojiMenu(false); }} disabled={!canPost || Boolean(chatLoadError)}>✹</button>
+        <button type="button" className="mini-chat-emoji-btn" onClick={() => { setShowEmojiMenu(!showEmojiMenu); setShowVfxMenu(false); }} disabled={!canPost || Boolean(chatLoadError)}>✨</button>
+        <button type="button" className="media-placeholder mini-chat-media-placeholder" disabled title="Image and GIF sharing will be added later" aria-label="Image and GIF sharing coming soon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2" /><circle cx="8.5" cy="8.5" r="1.5" /><path d="m21 15-5-5L5 21" /></svg></button>
+        <input className="message-input" value={input} onChange={(event) => setInput(event.target.value)} placeholder={canPost ? 'Message the lounge...' : 'Chat is locked'} disabled={!canPost || Boolean(chatLoadError)} />
+        <button className="send-button" type="submit" disabled={!canPost || Boolean(chatLoadError) || !input.trim()}>Send</button>
       </form>
     </> : <button className="mini-chat-launcher" onClick={() => setOpen(true)}><span className="mini-chat-bubble">✦</span> Open chat</button>}
   </aside>;

@@ -31,6 +31,7 @@ export function usePixelingsChat(
   demoMode = false, 
   isModerator = false
 ) {
+  const PAGE_SIZE = 15;
   const [messages, setMessages] = React.useState<Message[]>([]);
   const [reviewQueue, setReviewQueue] = React.useState<Message[]>([]);
   const [participants, setParticipants] = React.useState<Participant[]>([]);
@@ -41,7 +42,45 @@ export function usePixelingsChat(
   const [sessionId, setSessionId] = React.useState<string>('');
   const [sessionRoom, setSessionRoom] = React.useState('');
   const [loadedRoom, setLoadedRoom] = React.useState('');
+  const [hasMoreMessages, setHasMoreMessages] = React.useState(false);
+  const [loadingOlderMessages, setLoadingOlderMessages] = React.useState(false);
+  const [chatLoadError, setChatLoadError] = React.useState('');
+  const [historyError, setHistoryError] = React.useState('');
   const coinSendTimes = React.useRef<number[]>([]);
+  // Heartbeat every 30s so the roster shows who is online and in which room.
+  React.useEffect(() => {
+    if (demoMode || !currentUserId) return;
+    const beat = () => { void supabase.rpc('heartbeat', { room_name: roomName }); };
+    beat();
+    const timer = window.setInterval(beat, 30000);
+    return () => window.clearInterval(timer);
+  }, [roomName, currentUserId, demoMode]);
+  // Refresh the online roster every 30s alongside the heartbeat.
+  const [onlineUsers, setOnlineUsers] = React.useState<{ user_id: string; display_name: string; room: string | null }[]>([]);
+  React.useEffect(() => {
+    if (demoMode) return;
+    const pull = () => { void supabase.from('online_now').select('user_id, display_name, room')
+      .then(({ data }) => { if (data) setOnlineUsers(data as typeof onlineUsers); }); };
+    pull();
+    const timer = window.setInterval(pull, 30000);
+    return () => window.clearInterval(timer);
+  }, [demoMode]);
+  // Block sending while the signed-in user is timed out or banned.
+  const [penalty, setPenalty] = React.useState<{ kind: string; reason: string; until?: string } | null>(null);
+  React.useEffect(() => {
+    if (demoMode || !currentUserId) { setPenalty(null); return; }
+    const check = async () => {
+      const { data } = await supabase.from('chat_penalties').select('kind, reason, until_at, lifted_at').eq('user_id', currentUserId).is('lifted_at', null).order('created_at', { ascending: false }).limit(5);
+      const rows = (data || []) as { kind: string; reason: string; until_at: string | null; lifted_at: string | null }[];
+      const active = rows.find((row) => row.kind === 'ban' || (row.kind === 'timeout' && row.until_at && new Date(row.until_at) > new Date()));
+      setPenalty(active ? { kind: active.kind, reason: active.reason, until: active.until_at || undefined } : null);
+    };
+    void check();
+    const timer = window.setInterval(() => void check(), 60000);
+    return () => window.clearInterval(timer);
+  }, [currentUserId, demoMode]);
+  const activeRoomRef = React.useRef(roomName);
+  activeRoomRef.current = roomName;
 
   const activeMessages = loadedRoom === roomName ? messages : [];
   const activeIsLive = loadedRoom === roomName && isLive;
@@ -56,6 +95,10 @@ export function usePixelingsChat(
     setSessionId('');
     setSessionRoom('');
     setLoadedRoom(roomName);
+    setHasMoreMessages(false);
+    setLoadingOlderMessages(false);
+    setChatLoadError('');
+    setHistoryError('');
     setReviewQueue([]);
     setLockState({ reason: '' });
     if (demoMode) {
@@ -73,21 +116,24 @@ export function usePixelingsChat(
     }
     // 1. Fetch initial session lock state & messages
     async function initChat() {
-      const { data: profileData } = await supabase.from('profiles_public').select('id, username, approved_nickname, avatar_url, background_url');
-      if (cancelled) return;
-      if (profileData) setParticipants(profileData.map((profile) => ({ id: profile.id, name: profile.approved_nickname || profile.username, avatarUrl: profile.avatar_url || 'profile-happy-slime', backgroundUrl: profile.background_url || 'background-happy-slime' })));
-      if (isModerator) {
-        const { data: pendingData } = await supabase.from('profiles').select('id, username, pending_nickname').eq('nickname_status', 'pending');
-        if (cancelled) return;
-        if (pendingData) setNicknameRequests(pendingData.map((row) => ({ id: row.id, username: row.username, nickname: row.pending_nickname })));
-      }
-      const { data: session } = await supabase
+      const { data: session, error: sessionError } = await supabase
         .from('sessions')
         .select('id, status, lock_reason, locked_at, locked_by')
         .eq('name', roomName)
-        .single();
+        .maybeSingle();
       if (cancelled) return;
-      if (!session) { setLoading(false); return; }
+      if (sessionError) {
+        setChatLoadError(`Could not load ${roomName}. Please try again.`);
+        setLoading(false);
+        return;
+      }
+      if (!session) {
+        setChatLoadError(roomName === 'Teacher Lounge'
+          ? 'Teacher Lounge has not been set up in Supabase yet. Run supabase/teacher_lounge_room.sql to add it.'
+          : `The ${roomName} room has not been set up in Supabase yet.`);
+        setLoading(false);
+        return;
+      }
       realtimeSessionId = session.id;
       setSessionId(session.id);
       setSessionRoom(roomName);
@@ -98,15 +144,35 @@ export function usePixelingsChat(
         changedBy: session.locked_by || undefined,
       });
 
-      const { data: msgData } = await supabase
+      const { data: msgData, error: messageError } = await supabase
         .from('messages')
         .select('*')
         .eq('session_id', session.id)
-        .order('created_at', { ascending: true });
+        .order('created_at', { ascending: false })
+        .order('id', { ascending: false })
+        .limit(PAGE_SIZE);
 
       if (cancelled) return;
-      if (msgData) setMessages(msgData);
+      if (messageError) {
+        setChatLoadError(`Could not load messages for ${roomName}. Please try again.`);
+        setLoading(false);
+        return;
+      }
+      const initialMessages = (msgData || []).reverse();
+      setMessages(initialMessages);
+      setHasMoreMessages(initialMessages.length === PAGE_SIZE);
       setLoading(false);
+
+      const { data: profileData, error: profileError } = await supabase
+        .from('profiles_public')
+        .select('id, username, approved_nickname, avatar_url, background_url');
+      if (!cancelled && profileError) console.error('Failed to load chat participants:', profileError);
+      if (!cancelled && profileData) setParticipants(profileData.map((profile) => ({ id: profile.id, name: profile.approved_nickname || profile.username, avatarUrl: profile.avatar_url || 'profile-happy-slime', backgroundUrl: profile.background_url || 'background-happy-slime' })));
+      if (!cancelled && isModerator) {
+        const { data: pendingData, error: pendingError } = await supabase.from('profiles').select('id, username, pending_nickname').eq('nickname_status', 'pending');
+        if (pendingError) console.error('Failed to load nickname requests:', pendingError);
+        if (pendingData) setNicknameRequests(pendingData.map((row) => ({ id: row.id, username: row.username, nickname: row.pending_nickname })));
+      }
     }
 
     initChat();
@@ -123,7 +189,7 @@ export function usePixelingsChat(
           if (newMsg.session_id !== realtimeSessionId) return;
           // Filtering recipient whispers client-side in tandem with RLS
           if (isModerator || !newMsg.is_whisper || newMsg.recipient_id === currentUserId || newMsg.sender_id === currentUserId) {
-            setMessages((prev) => [...prev, newMsg]);
+            setMessages((prev) => prev.some((message) => message.id === newMsg.id) ? prev : [...prev, newMsg]);
           }
         }
       )
@@ -176,12 +242,32 @@ export function usePixelingsChat(
     };
   }, [roomName, currentUserId, demoMode, isModerator]);
 
-  // Send message helper enforcing client-side live check before RPC/Insert
-  const sendMessage = async (content: string, recipientId?: string, senderName: string = 'Pixel') => {
-    if ((!activeIsLive || sessionRoom !== roomName) && !isModerator) throw new Error("Chat is currently locked. Session is not LIVE.");
+  // The Teacher Lounge is permanently unlocked: only staff can see it, and
+  // global "Lock chats" skips it so staff always have a place to talk.
+  React.useEffect(() => {
+    if (roomName !== 'Teacher Lounge' || demoMode) return;
+    void supabase.from('sessions').update({ status: 'live', lock_reason: null }).eq('name', 'Teacher Lounge')
+      .then(({ data, error }) => {
+        if (!error) { setIsLive(true); setLockState({ reason: '' }); }
+      });
+  }, [roomName, demoMode]);
 
+  // Send message helper enforcing room readiness and client-side live status.
+  const sendMessage = async (
+    content: string,
+    recipientId?: string,
+    senderName: string = 'Pixel',
+    isBroadcast = false,
+    isPriority = false,
+  ) => {
     if (!demoMode && (!sessionId || sessionRoom !== roomName)) {
-      throw new Error("Chat is still loading. Please try sending the effect again in a moment.");
+      throw new Error(chatLoadError || `The ${roomName} room is not ready yet. Please try again in a moment.`);
+    }
+    if ((!activeIsLive || sessionRoom !== roomName) && !isModerator) throw new Error("Chat is currently locked. Session is not LIVE.");
+    if (penalty && !isModerator) {
+      throw new Error(penalty.kind === 'ban'
+        ? 'You are banned from chat. Ask your teacher for help.'
+        : `You are in time out until ${new Date(penalty.until as string).toLocaleTimeString()}.`);
     }
 
     let reservedCoinTimestamp: number | null = null;
@@ -205,7 +291,8 @@ export function usePixelingsChat(
     }
 
     const isWhisper = Boolean(recipientId);
-    
+    let sendError: string | null = null;
+
     const { error } = await supabase.from('messages').insert({
       session_id: sessionId,
       sender_id: currentUserId,
@@ -213,15 +300,65 @@ export function usePixelingsChat(
       content,
       is_whisper: isWhisper,
       recipient_id: recipientId || null,
+      is_broadcast: isBroadcast,
+      is_priority: isPriority,
     });
+    if (error) sendError = error.message;
 
-    if (error) {
+    // Retry once without is_priority/is_broadcast flags: older databases that
+    // have not run supabase/chat_features.sql reject unknown columns.
+    if (sendError && /column|is_priority|is_broadcast/i.test(sendError)) {
+      const { error: retryError } = await supabase.from('messages').insert({
+        session_id: sessionId,
+        sender_id: currentUserId,
+        sender_name: senderName,
+        content,
+        is_whisper: isWhisper,
+        recipient_id: recipientId || null,
+      });
+      if (retryError) sendError = retryError.message; else sendError = null;
+    }
+
+    if (sendError) {
       // A failed insert must not consume one of the user's three coin sends.
       if (reservedCoinTimestamp !== null) {
         coinSendTimes.current = coinSendTimes.current.filter((sentAt) => sentAt !== reservedCoinTimestamp);
       }
       throw error;
     }
+  };
+
+  const loadOlderMessages = async () => {
+    if (!hasMoreMessages || loadingOlderMessages || !sessionId || sessionRoom !== roomName || demoMode) return;
+    const oldestMessage = messages[0];
+    if (!oldestMessage) return;
+
+    const requestedRoom = roomName;
+    setLoadingOlderMessages(true);
+    setHistoryError('');
+    const { data, error } = await supabase
+      .from('messages')
+      .select('*')
+      .eq('session_id', sessionId)
+      .or(`created_at.lt.${oldestMessage.created_at},and(created_at.eq.${oldestMessage.created_at},id.lt.${oldestMessage.id})`)
+      .order('created_at', { ascending: false })
+      .order('id', { ascending: false })
+      .limit(PAGE_SIZE);
+
+    if (activeRoomRef.current !== requestedRoom) return;
+    setLoadingOlderMessages(false);
+    if (error) {
+      console.error(`Failed to load older messages for ${requestedRoom}:`, error);
+      setHistoryError('Could not load earlier messages. Please try again.');
+      return;
+    }
+
+    const olderMessages = (data || []).reverse();
+    setMessages((currentMessages) => {
+      const currentIds = new Set(currentMessages.map((message) => message.id));
+      return [...olderMessages.filter((message) => !currentIds.has(message.id)), ...currentMessages];
+    });
+    setHasMoreMessages((data || []).length === PAGE_SIZE);
   };
 
   const requestNickname = async (requested: string) => {
@@ -285,6 +422,7 @@ export function usePixelingsChat(
   };
 
   const toggleLive = async (reason = '', requestedState?: boolean) => {
+    if (roomName === 'Teacher Lounge' && isModerator) return;
     const next = requestedState ?? !activeIsLive;
     const previousLockState = lockState;
     const nextLockState = next ? { reason: '' } : { reason: reason.trim() || 'Chat temporarily locked by a moderator.' };
@@ -305,5 +443,29 @@ export function usePixelingsChat(
     }
   };
 
-  return { messages: activeMessages, reviewQueue: isModerator ? reviewQueue : [], participants, isLive: activeIsLive, lockState, loading: activeLoading, sendMessage, requestNickname, nicknameRequests, reviewNickname, purgeChat, deleteMessage, approveMessage, rejectMessage, toggleLive };
+  return {
+    messages: activeMessages,
+    reviewQueue: isModerator ? reviewQueue : [],
+    participants,
+    isLive: activeIsLive,
+    lockState,
+    loading: activeLoading,
+    hasMoreMessages: loadedRoom === roomName && hasMoreMessages,
+    loadingOlderMessages: loadedRoom === roomName && loadingOlderMessages,
+    chatLoadError: loadedRoom === roomName ? chatLoadError : '',
+    historyError: loadedRoom === roomName ? historyError : '',
+    loadOlderMessages,
+    sendMessage,
+    sessionId: loadedRoom === roomName ? sessionId : '',
+    onlineUsers,
+    penalty,
+    requestNickname,
+    nicknameRequests,
+    reviewNickname,
+    purgeChat,
+    deleteMessage,
+    approveMessage,
+    rejectMessage,
+    toggleLive,
+  };
 }

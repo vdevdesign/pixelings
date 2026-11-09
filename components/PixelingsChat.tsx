@@ -1,12 +1,49 @@
 import React, { useEffect, useState } from 'react';
+import { supabase } from '../lib/supabaseClient';
+
+// Approved GIFs live in src/assets/approved-gifs/ with a manifest.json listing
+// the filenames, exactly like the campaign-hub picker this mirrors. Globbing
+// eagerly gives us asset URLs that survive the Vite build.
+const GIF_MODULES = import.meta.glob('../src/assets/approved-gifs/*.{gif,png,jpg,jpeg,webp}', {
+  eager: true,
+  import: 'default',
+}) as Record<string, string>;
+type ApprovedGif = { name: string; url: string };
+const APPROVED_GIFS: ApprovedGif[] = (() => {
+  const manifest = import.meta.glob('../src/assets/approved-gifs/manifest.json', {
+    eager: true,
+    import: 'default',
+  }) as Record<string, string[]>;
+  const names = Object.values(manifest)[0] || [];
+  return names
+    .map((fileName: string) => {
+      const match = Object.entries(GIF_MODULES).find(([path]) => path.endsWith('/' + fileName));
+      return match ? { name: fileName.replace(/\.[^.]+$/, ''), url: match[1] } : null;
+    })
+    .filter((gif): gif is ApprovedGif => gif !== null);
+})();
+const GIF_MESSAGE_PREFIX = '[gif] ';
 import { usePixelingsChat } from '../src/hooks/usePixelingsChat';
-import { moderationReason } from '../lib/moderation';
 import { CHAT_ROOMS, ChatRoom } from './chatRooms';
 import { avatarItemById, profileItems } from './avatarItems';
 
 const PIXEL_STICKERS = ['✨', '🎉', '🧪', '🔥'];
 const COIN_EMOJI = '\u{1FA99}';
 const VFX_EMOJIS = [{ emoji: COIN_EMOJI, label: 'Coin burst' }];
+// Username color cosmetics share the 'glow' slot with the old neon glow.
+// A color id ('name-*') tints the student's chat name; 'neon-glow' keeps the
+// soft electric aura.
+const USERNAME_NAME_COLORS: Record<string, string> = {
+  'name-coral': '#ff8a7a',
+  'name-mint': '#7ef0c2',
+  'name-lilac': '#c9a6ff',
+  'name-honey': '#ffd06e',
+  'name-sky': '#8fd4ff',
+  'name-rose': '#ff9ec4',
+  'name-lime': '#c6f95e',
+  'name-aqua': '#7fe8ff',
+};
+const isNameColor = (glow: string) => glow.startsWith('name-');
 const QUICK_NEEDS = [
   { label: 'Bathroom', emoji: '🚽', message: 'I need to use the restroom' },
   { label: 'Water/Snack', emoji: '🍎', message: 'I am hungry or thirsty' },
@@ -72,7 +109,14 @@ interface ChatProps {
   onManualStatusChange?: (isLive: boolean) => void;
   chatCosmetics?: { glow: string; tag: string; stickers: string; vfx: string; style: string };
   ownedItems?: string[];
-  onChatStyleChange?: (style: string) => void;
+  onChatStyleChange?: (style: string) => void | Promise<void>;
+  /** Mirror the moderation queue (flagged messages + nickname requests) up to
+   *  the app header so the bell panel can review them from any tab. */
+  onModerationQueue?: (queue: {
+    reviewQueue: { id: string; sender_name: string; content: string; moderation_reason?: string | null }[];
+    nicknameRequests: { id: string; username: string; nickname: string }[];
+    handlers: { approveMessage: (id: string) => void; rejectMessage: (id: string) => void; approveNickname: (id: string) => void; rejectNickname: (id: string) => void };
+  }) => void;
   currentProfile?: { avatarUrl: string; backgroundUrl: string };
 }
 
@@ -91,6 +135,7 @@ export const PixelingsChat: React.FC<ChatProps> = ({
   chatCosmetics = { glow: '', tag: '', stickers: '', vfx: '', style: '' },
   ownedItems = [],
   onChatStyleChange,
+  onModerationQueue,
   currentProfile = { avatarUrl: 'profile-happy-slime', backgroundUrl: 'background-happy-slime' },
 }) => {
   // Block non-teachers from the Teacher Lounge
@@ -123,11 +168,13 @@ export const PixelingsChat: React.FC<ChatProps> = ({
   }
 
   const messagesContainerRef = React.useRef<HTMLDivElement>(null);
+  const pendingScrollHeight = React.useRef<number | null>(null);
+  const shouldFollowMessages = React.useRef(true);
   const vfxMenuRef = React.useRef<HTMLDivElement>(null);
   const emojiMenuRef = React.useRef<HTMLDivElement>(null);
   const [activeVfxId, setActiveVfxId] = React.useState<string | null>(null);
   const vfxCooldowns = React.useRef<Map<string, number>>(new Map());
-  const { messages, reviewQueue, participants, isLive, lockState, loading, sendMessage, requestNickname: requestNicknameToServer, nicknameRequests, reviewNickname: reviewNicknameToServer, purgeChat, deleteMessage, approveMessage, rejectMessage, toggleLive } = usePixelingsChat(
+  const { messages, reviewQueue, participants, isLive, lockState, loading, hasMoreMessages, loadingOlderMessages, chatLoadError, historyError, loadOlderMessages, sendMessage, sessionId: hookSessionId, onlineUsers, penalty, requestNickname: requestNicknameToServer, nicknameRequests, reviewNickname: reviewNicknameToServer, purgeChat, deleteMessage, approveMessage, rejectMessage, toggleLive } = usePixelingsChat(
     room,
     currentUserId,
     demoMode,
@@ -136,17 +183,15 @@ export const PixelingsChat: React.FC<ChatProps> = ({
 
   const [input, setInput] = React.useState('');
   const [whisperTarget, setWhisperTarget] = React.useState<string>('');
-  const [nickname, setNickname] = React.useState(currentUsername);
   const [nicknameDraft, setNicknameDraft] = React.useState(currentUsername);
   const [nicknameNotice, setNicknameNotice] = React.useState('');
-  const [showModeration, setShowModeration] = React.useState(false);
-  const [showQuickNeeds, setShowQuickNeeds] = React.useState(false);
   const [lockReasonDraft, setLockReasonDraft] = React.useState('Class chat is paused while we reset the room.');
   const [statusNotice, setStatusNotice] = React.useState('');
   const [openUsername, setOpenUsername] = React.useState<string | null>(null);
   const [showThemeMenu, setShowThemeMenu] = React.useState(false);
   const themeMenuRef = React.useRef<HTMLDivElement>(null);
   const availableThemes = CHAT_THEMES.filter((theme) => !theme.id || ownedItems.includes(theme.id));
+  const visibleRooms = CHAT_ROOMS.filter((option) => option !== 'Teacher Lounge' || isModerator || isAdmin);
   const activeTheme = CHAT_THEMES.find((theme) => theme.id === chatCosmetics.style) || CHAT_THEMES[0];
   React.useEffect(() => {
     if (!showThemeMenu) return;
@@ -158,25 +203,40 @@ export const PixelingsChat: React.FC<ChatProps> = ({
   }, [showThemeMenu]);
   const [showVfxMenu, setShowVfxMenu] = React.useState(false);
   const [showEmojiMenu, setShowEmojiMenu] = React.useState(false);
+  const [showGifMenu, setShowGifMenu] = React.useState(false);
+  const [gifSearch, setGifSearch] = React.useState('');
+  const gifMenuRef = React.useRef<HTMLDivElement>(null);
   const liveUsername = participants.find((participant) => participant.id === currentUserId)?.name || currentUsername;
 
   React.useEffect(() => {
-    setNickname(liveUsername);
     setNicknameDraft(liveUsername);
   }, [liveUsername]);
 
   React.useEffect(() => {
-    if (messagesContainerRef.current) {
-      const { scrollTop, scrollHeight, clientHeight } = messagesContainerRef.current;
-      const isAtBottom = scrollHeight - scrollTop <= clientHeight + 50;
-      if (isAtBottom) {
-        messagesContainerRef.current.scrollTo({
-          top: scrollHeight,
-          behavior: 'smooth',
-        });
-      }
+    pendingScrollHeight.current = null;
+    shouldFollowMessages.current = true;
+    if (messagesContainerRef.current) messagesContainerRef.current.scrollTop = 0;
+  }, [room]);
+
+  React.useLayoutEffect(() => {
+    const container = messagesContainerRef.current;
+    if (!container) return;
+    if (pendingScrollHeight.current !== null) {
+      container.scrollTop += container.scrollHeight - pendingScrollHeight.current;
+      pendingScrollHeight.current = null;
+    } else if (shouldFollowMessages.current) {
+      container.scrollTop = container.scrollHeight;
     }
   }, [messages]);
+
+  const handleMessagesScroll = (event: React.UIEvent<HTMLDivElement>) => {
+    const container = event.currentTarget;
+    shouldFollowMessages.current = container.scrollHeight - container.scrollTop <= container.clientHeight + 50;
+    if (container.scrollTop <= 24 && hasMoreMessages && !loadingOlderMessages) {
+      pendingScrollHeight.current = container.scrollHeight;
+      void loadOlderMessages();
+    }
+  };
 
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
@@ -185,6 +245,9 @@ export const PixelingsChat: React.FC<ChatProps> = ({
       }
       if (emojiMenuRef.current && !emojiMenuRef.current.contains(event.target as Node)) {
         setShowEmojiMenu(false);
+      }
+      if (gifMenuRef.current && !gifMenuRef.current.contains(event.target as Node)) {
+        setShowGifMenu(false);
       }
     }
 
@@ -213,20 +276,7 @@ export const PixelingsChat: React.FC<ChatProps> = ({
     }
   };
 
-  const handleQuickNeed = async (need: typeof QUICK_NEEDS[0]) => {
-    setShowQuickNeeds(false);
-    try {
-      await sendMessage(
-        `🆘 ${need.emoji} ${need.message}`, 
-        undefined, 
-        liveUsername,
-        false,
-        true // isPriority = true
-      );
-    } catch (err) {
-      setStatusNotice('Could not send the request.');
-    }
-  };
+
 
   const handleSendVfx = async (emoji: string) => {
     if (!chatIsLive && !isModerator) return;
@@ -241,13 +291,36 @@ export const PixelingsChat: React.FC<ChatProps> = ({
     }
   };
 
+  // Sends an approved GIF as a chat message: `[gif] <url>`. Rendering turns it
+  // back into an animated <img> for everyone — content stays plain text at rest.
+  const sendGif = async (gif: ApprovedGif) => {
+    if (!chatIsLive && !isModerator) return;
+    setShowGifMenu(false);
+    setGifSearch('');
+    try {
+      await sendMessage(GIF_MESSAGE_PREFIX + gif.url, whisperTarget.trim() ? whisperTarget : undefined, liveUsername);
+    } catch (err) {
+      console.error('Failed to send GIF:', err);
+      setStatusNotice(getSendErrorMessage(err, 'Could not send that GIF.'));
+    }
+  };
+
+  const handleThemeChange = async (style: string) => {
+    if (!onChatStyleChange) return;
+    setStatusNotice('');
+    try {
+      await onChatStyleChange(style);
+    } catch (error) {
+      console.error('Failed to save chat theme:', error);
+      setStatusNotice(getSendErrorMessage(error, 'Could not save your chat theme.'));
+    }
+  };
+
   const requestNickname = async () => {
     const requested = nicknameDraft.trim();
-    if (!requested || requested === nickname) return;
+    if (!requested || requested === liveUsername) return;
     try {
       await requestNicknameToServer(requested);
-      const reason = moderationReason(requested);
-      setNicknameQueue((prev) => [...prev, { id: crypto.randomUUID(), user: currentUsername, nickname: requested, reason: reason || 'Nickname requires teacher approval' }]);
       setNicknameNotice('Nickname submitted for teacher approval.');
     } catch (error) {
       console.error('Failed to request nickname:', error);
@@ -302,38 +375,40 @@ export const PixelingsChat: React.FC<ChatProps> = ({
   // to locked sessions, so this only needs to fix the client-side status.
   const teacherLoungeAlwaysLive = room === 'Teacher Lounge' && isModerator;
   const chatIsLive = teacherLoungeAlwaysLive ? true : allChatsLocked ? manualChatOverride === true : manualChatOverride ?? isLive;
-  const canPost = chatIsLive || isModerator;
+  const canPost = !chatLoadError && (chatIsLive || isModerator) && !(penalty && !isModerator);
+
+  React.useEffect(() => {
+    onModerationQueue?.({
+      reviewQueue: reviewQueue.map(({ id, sender_name, content, moderation_reason }) => ({ id, sender_name, content, moderation_reason })),
+      nicknameRequests: nicknameRequests.map(({ id, username, nickname }) => ({ id, username, nickname })),
+      handlers: {
+        approveMessage: (id) => { void approveMessage({ id } as never); },
+        rejectMessage: (id) => { void rejectMessage({ id } as never); },
+        approveNickname: (id) => { void handleNicknameReview(id, true); },
+        rejectNickname: (id) => { void handleNicknameReview(id, false); },
+      },
+    });
+  }, [reviewQueue, nicknameRequests, approveMessage, rejectMessage, handleNicknameReview, onModerationQueue]);
+
+  const setPenaltyFor = async (userId: string, kind: 'timeout' | 'ban' | 'unban', minutes?: number) => {
+    setStatusNotice('');
+    const { error } = await supabase.rpc('set_chat_penalty', { target: userId, penalty_kind: kind, minutes: minutes ?? null, reason: '' });
+    setStatusNotice(error ? 'Could not update chat access. Check moderator permissions.' : kind === 'unban' ? 'Chat access restored.' : kind === 'ban' ? 'Student banned from chat.' : `Student timed out for ${minutes} minutes.`);
+  };
 
   if (loading) {
     return <div className="chat-card"><div className="composer">Loading Pixelings Chat...</div></div>;
   }
 
-  const queueCount = reviewQueue.length + nicknameRequests.length;
+
 
   return (
     <>
-      {isModerator && <div className="page-notification">
-        <button className="notification-button" onClick={() => setShowModeration((open) => !open)} aria-label="Open moderation notifications">
-          <span className="notification-icon">♢</span>{queueCount > 0 && <b>{queueCount}</b>}
-        </button>
-        {showModeration && <aside className="review-panel notification-box">
-          <div className="review-heading"><span>MODERATION QUEUE</span><b>{queueCount}</b></div>
-          {queueCount === 0 && <p className="empty">No items to review.</p>}
-          {reviewQueue.map((item) => <div className="review-item" key={item.id}>
-            <div><strong>{item.sender_name}</strong><p>{item.content}</p><small>{item.moderation_reason}</small></div>
-            <div className="review-actions"><button onClick={() => approveMessage(item)} className="approve-button">Approve</button><button onClick={() => rejectMessage(item)} className="reject-button">Reject</button></div>
-          </div>)}
-          {nicknameRequests.map((item) => <div className="review-item" key={item.id}>
-            <div><strong>{item.username} · nickname</strong><p>{item.nickname}</p><small>Nickname requires teacher approval</small></div>
-            <div className="review-actions"><button onClick={() => void handleNicknameReview(item.id, true)} className="approve-button">Approve</button><button onClick={() => void handleNicknameReview(item.id, false)} className="reject-button">Reject</button></div>
-          </div>)}
-        </aside>}
-      </div>}
       <div className="chat-workspace">
       <aside className="room-menu" aria-label="Chat rooms">
         <div className="room-menu-header">CLASSROOMS</div>
         <div className="room-options">
-          {CHAT_ROOMS.map((option) => <button key={option} type="button" className={`room-option ${room === option ? 'active' : ''}`} onClick={() => onRoomChange(option)} aria-current={room === option ? 'page' : undefined}>{option}<span className="room-option-sparkles" aria-hidden="true">✦</span></button>)}
+          {visibleRooms.map((option) => <button key={option} type="button" className={`room-option ${room === option ? 'active' : ''}`} onClick={() => onRoomChange(option)} aria-current={room === option ? 'page' : undefined}>{option}<span className="room-option-sparkles" aria-hidden="true">✦</span></button>)}
         </div>
       </aside>
       <div className={`chat-card theme-${chatCosmetics.style || 'classic'} ${chatIsLive ? 'chat-live' : 'chat-locked'}`}>
@@ -348,9 +423,9 @@ export const PixelingsChat: React.FC<ChatProps> = ({
 
         {/* DM Controls */}
         {isModerator && <div className="moderator-actions">
-            <button onClick={handleStatusChange} className={`toggle-button ${chatIsLive ? 'lock-action' : 'unlock-action'}`} aria-label={chatIsLive ? `Lock ${room} chat` : `Unlock ${room} chat`}>
+            {!teacherLoungeAlwaysLive && <button onClick={handleStatusChange} className={`toggle-button ${chatIsLive ? 'lock-action' : 'unlock-action'}`} aria-label={chatIsLive ? `Lock ${room} chat` : `Unlock ${room} chat`}>
               {chatIsLive ? 'Lock chat' : 'Unlock chat'}
-            </button>
+            </button>}
             <button onClick={handlePurge} className="purge-button">Purge Chat</button>
         </div>}
         <div className="chat-controls">
@@ -359,7 +434,7 @@ export const PixelingsChat: React.FC<ChatProps> = ({
             <span aria-hidden="true">{activeTheme.emoji}</span> {activeTheme.name}
           </button>
           {showThemeMenu && <div className="theme-picker-menu">
-            {availableThemes.map((theme) => <button key={theme.id || 'classic'} type="button" className={`theme-option ${chatCosmetics.style === theme.id ? 'active' : ''}`} onClick={() => { onChatStyleChange?.(theme.id); setShowThemeMenu(false); }}>
+            {availableThemes.map((theme) => <button key={theme.id || 'classic'} type="button" className={`theme-option ${chatCosmetics.style === theme.id ? 'active' : ''}`} onClick={() => { void handleThemeChange(theme.id); setShowThemeMenu(false); }}>
               <span aria-hidden="true">{theme.emoji}</span> {theme.name}{chatCosmetics.style === theme.id ? ' ✓' : ''}
             </button>)}
             {availableThemes.length === 1 && <span className="theme-picker-note">Buy themes in the Stardust Shop!</span>}
@@ -379,10 +454,18 @@ export const PixelingsChat: React.FC<ChatProps> = ({
         <div><strong>Chat locked</strong><span>{lockState.reason || 'Posting is paused for this room.'}</span></div>
         {isModerator && <button type="button" onClick={handleStatusChange}>Unlock</button>}
       </div>}
+      {penalty && !isModerator && <div className="chat-status-banner penalty-banner" role="alert">
+        <span className="lock-symbol">⛔</span>
+        <div><strong>{penalty.kind === 'ban' ? 'Banned from chat' : 'Time out'}</strong>
+          <span>{penalty.kind === 'ban' ? 'Your chat access has been removed. Please talk with your teacher.' : `You can chat again at ${penalty.until ? new Date(penalty.until).toLocaleTimeString() : 'a later time'}.`}</span></div>
+      </div>}
+      {chatLoadError && <p className="chat-load-error" role="alert">{chatLoadError}</p>}
       {statusNotice && <p className="status-notice" role="status">{statusNotice}</p>}
 
       {/* 2. Messages List */}
-      <div className="messages" ref={messagesContainerRef}>
+      <div className="messages" ref={messagesContainerRef} onScroll={handleMessagesScroll}>
+        {loadingOlderMessages && <p className="history-loading">Loading earlier messages…</p>}
+        {historyError && <p className="history-error" role="alert">{historyError}</p>}
         {messages.length === 0 ? (
           <p className="empty">No messages yet.</p>
         ) : (
@@ -398,8 +481,8 @@ export const PixelingsChat: React.FC<ChatProps> = ({
               <div key={msg.id} className={`message ${isMe ? 'mine' : ''} ${msg.is_whisper ? 'whisper' : ''}`}>
                 {!isSameSender && (
                   <div className="message-meta" onMouseEnter={() => setOpenUsername(msg.id)} onMouseLeave={() => setOpenUsername((open) => open === msg.id ? null : open)}>
-                    <span className={`chat-profile-icon ${isMe && chatCosmetics.glow ? 'chat-name-glow' : ''}`} style={{ backgroundImage: profileBackground ? `url(${profileBackground.src})` : undefined }}><img src={profileIcon.src} alt={`${msg.sender_name}'s profile icon`} /></span>
-                    <button type="button" className={`message-name ${isMe && chatCosmetics.glow ? 'chat-name-glow' : ''}`} onClick={() => setOpenUsername(openUsername === msg.id ? null : msg.id)} title="Show username">
+                    <span className={`chat-profile-icon ${isMe && chatCosmetics.glow && !isNameColor(chatCosmetics.glow) ? 'chat-name-glow' : ''}`} style={{ backgroundImage: profileBackground ? `url(${profileBackground.src})` : undefined }}><img src={profileIcon.src} alt={`${msg.sender_name}'s profile icon`} /></span>
+                    <button type="button" className={`message-name ${isMe && chatCosmetics.glow && !isNameColor(chatCosmetics.glow) ? 'chat-name-glow' : ''}`} style={isMe && isNameColor(chatCosmetics.glow) ? { color: USERNAME_NAME_COLORS[chatCosmetics.glow] } : undefined} onClick={() => setOpenUsername(openUsername === msg.id ? null : msg.id)} title="Show username">
                       {msg.sender_name}
                     </button>
                     {isMe && chatCosmetics.tag && <span className="equipped-chat-tag">{chatCosmetics.tag.replace(/^tag-/, '').replace(/-/g, ' ')}</span>}
@@ -431,7 +514,16 @@ export const PixelingsChat: React.FC<ChatProps> = ({
                     }}
                     style={{ cursor: msg.content.includes(COIN_EMOJI) ? 'pointer' : 'default' }}
                   >
-                    {msg.content}
+                    {(() => {
+                      // Approved GIF messages arrive as `[gif] <asset-url>`.
+                      if (msg.content.startsWith(GIF_MESSAGE_PREFIX)) {
+                        const gifUrl = msg.content.slice(GIF_MESSAGE_PREFIX.length).trim();
+                        if (/^(https?:\/\/|data:image\/)/.test(gifUrl) || gifUrl.startsWith('/')) {
+                          return <img className="chat-gif-message" src={gifUrl} alt="Shared GIF" loading="eager" />;
+                        }
+                      }
+                      return msg.content;
+                    })()}
                     {msg.content.includes(COIN_EMOJI) && (
                       <span 
                         key={activeVfxId === msg.id ? 'restart' : 'static'} 
@@ -480,22 +572,32 @@ export const PixelingsChat: React.FC<ChatProps> = ({
             </div>
 
             <div className="message-form">
-              <input
-                type="text"
-                value={input}
-                onChange={(e) => setInput(e.target.value)}
-                placeholder="Type a message..."
-                className="message-input"
-              />
-              { (chatCosmetics.stickers === 'pixel-stickers' || demoMode) && <div className="emoji-picker" aria-label="Emoji set">
+              {/* Pickers sit LEFT of the text input, icon-only and equal size. */}
+              <div className="composer-pickers">
                 <div className="picker-container">
                   <button type="button" className="vfx-menu-toggle" onClick={() => {
                     setShowEmojiMenu((open) => !open);
                     setShowVfxMenu(false);
-                  }} aria-label="Open emojis" aria-expanded={showEmojiMenu}>😊</button>
-                  <span className="picker-label">Emoji</span>
+                    setShowGifMenu(false);
+                  }} aria-label="Open emojis" aria-expanded={showEmojiMenu} title="Emoji">😊</button>
                 </div>
-                {showEmojiMenu && <div className="vfx-menu" ref={emojiMenuRef} role="menu">
+                <div className="picker-container">
+                  <button type="button" className="vfx-menu-toggle" onClick={() => {
+                    setShowVfxMenu((open) => !open);
+                    setShowEmojiMenu(false);
+                    setShowGifMenu(false);
+                  }} aria-label="Open effects" aria-expanded={showVfxMenu} title="Effect">✦</button>
+                </div>
+                <div className="picker-container">
+                  <button type="button" className="vfx-menu-toggle chat-gif-btn" onClick={() => {
+                    setShowGifMenu((open) => !open);
+                    setShowEmojiMenu(false);
+                    setShowVfxMenu(false);
+                  }} aria-label="Open GIF picker" aria-expanded={showGifMenu} title="Send a GIF">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2" /><circle cx="8.5" cy="8.5" r="1.5" /><path d="m21 15-5-5L5 21" /></svg>
+                  </button>
+                </div>
+                {showEmojiMenu && <div className="vfx-menu emoji-grid" ref={emojiMenuRef} role="menu">
                   {KID_FRIENDLY_EMOJIS.map((emoji) => (
                     <button key={emoji} type="button" className="vfx-button" onClick={() => {
                       setInput((v) => v + emoji);
@@ -503,17 +605,41 @@ export const PixelingsChat: React.FC<ChatProps> = ({
                     }} aria-label={`Add ${emoji}`} role="menuitem">{emoji}</button>
                   ))}
                 </div>}
-              </div>}
-              { (chatCosmetics.vfx === 'coin-vfx' || demoMode) && <div className="vfx-picker">
-                <div className="picker-container">
-                  <button type="button" className="vfx-menu-toggle" onClick={() => {
-                    setShowVfxMenu((open) => !open);
-                    setShowEmojiMenu(false);
-                  }} aria-label="Open effects" aria-expanded={showVfxMenu}>✦</button>
-                  <span className="picker-label">Effect</span>
-                </div>
                 {showVfxMenu && <div className="vfx-menu" ref={vfxMenuRef} role="menu">{VFX_EMOJIS.map(({ emoji, label }) => <button key={emoji} type="button" className="vfx-button" onClick={() => void handleSendVfx(emoji)} disabled={!chatIsLive && !isModerator} aria-label={`Send ${label}`} role="menuitem">{emoji}</button>)}</div>}
-              </div>}
+                {showGifMenu && (
+                  <div className="vfx-menu chat-gif-panel" role="menu">
+                    <input
+                      type="search"
+                      className="gif-search"
+                      placeholder="Search GIFs…"
+                      aria-label="Search GIFs"
+                      value={gifSearch}
+                      onChange={(e) => setGifSearch(e.target.value)}
+                    />
+                    {(() => {
+                      const query = gifSearch.trim().toLowerCase();
+                      const list = query ? APPROVED_GIFS.filter((gif) => gif.name.toLowerCase().includes(query)) : APPROVED_GIFS;
+                      if (!list.length) return <p className="gif-empty">No GIFs match that search.</p>;
+                      return (
+                        <div className="gif-grid">
+                          {list.map((gif) => (
+                            <button key={gif.name} type="button" className="chat-gif-item" title={gif.name} aria-label={`Send GIF ${gif.name}`} onClick={() => void sendGif(gif)}>
+                              <img src={gif.url} alt={gif.name} loading="lazy" />
+                            </button>
+                          ))}
+                        </div>
+                      );
+                    })()}
+                  </div>
+                )}
+              </div>
+              <input
+                type="text"
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                placeholder="Type a message..."
+                className="message-input"
+              />
               <button
                 type="submit"
                 className="send-button"
@@ -526,6 +652,18 @@ export const PixelingsChat: React.FC<ChatProps> = ({
       </div>
       </div>
       </div>
+      <footer className="online-roster" aria-label="Who is online">
+        <div className="online-roster-title">ONLINE NOW · {onlineUsers.length}</div>
+        <div className="online-roster-list">
+          {onlineUsers.length === 0 ? <span className="online-empty">Nobody else is here right now.</span> : onlineUsers.map((user) => (
+            <span className="online-user" key={user.user_id}>
+              <span className={`presence-dot ${user.user_id === currentUserId ? 'me' : ''}`} aria-hidden="true" />
+              <strong>{user.display_name}</strong>
+              {user.room && <span className="online-room">in {user.room}</span>}
+            </span>
+          ))}
+        </div>
+      </footer>
     </>
   );
 };

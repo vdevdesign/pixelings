@@ -40,7 +40,16 @@ export const profileItems: AvatarItem[] = Object.entries(profileImages)
   })
   .sort((a, b) => a.name.localeCompare(b.name));
 
+// These four backgrounds are excluded from the shop (the buyer asked to
+// retire them): baby dragon, blushy ghost, little night bat, chomp monster.
+export const RETIRED_BACKGROUND_IDS = new Set([
+  'background-baby-dragon',
+  'background-blushy-ghost',
+  'background-little-night-bat',
+  'background-chomp-monster',
+]);
 export const backgroundItems: AvatarItem[] = Object.entries(backgroundImages)
+  .filter(([path]) => !RETIRED_BACKGROUND_IDS.has(`background-${path.split('/').pop()!.replace(/\.png$/i, '').replace(/-background$/i, '')}`))
   .map(([path, module]) => {
     const file = path.split('/').pop() as string;
     return { id: `background-${file.replace(/\.png$/i, '').replace(/-background$/i, '')}`, kind: 'background' as const, name: prettify(file), src: module.default, price: backgroundPrice() };

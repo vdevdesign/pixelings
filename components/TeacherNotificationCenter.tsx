@@ -11,28 +11,42 @@ interface Notification {
   read: boolean;
 }
 
-export const TeacherNotificationCenter: React.FC<{ onUnreadChange?: (count: number) => void }> = ({ onUnreadChange }) => {
+export const TeacherNotificationCenter: React.FC<{
+  onUnreadChange?: (count: number) => void;
+  reviewQueue?: { id: string; sender_name: string; content: string; moderation_reason?: string | null }[];
+  nicknameRequests?: { id: string; username: string; nickname: string }[];
+  onApproveMessage?: (id: string) => void;
+  onRejectMessage?: (id: string) => void;
+  onApproveNickname?: (id: string) => void;
+  onRejectNickname?: (id: string) => void;
+}> = ({ onUnreadChange, reviewQueue = [], nicknameRequests = [], onApproveMessage, onRejectMessage, onApproveNickname, onRejectNickname }) => {
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [loading, setLoading] = useState(true);
   // Alerts the teacher dismissed with "Clear all"; kept so the 30s re-fetch
   // doesn't resurrect them.
   const dismissedRef = React.useRef<Set<string>>(new Set());
+  // When a new alert arrives it expands for ~5 seconds, then collapses back
+  // into the list so the teacher notices it without opening the panel.
+  const [spotlight, setSpotlight] = useState<Notification | null>(null);
+  const seenIdsRef = React.useRef<Set<string>>(new Set());
+  const spotlightTimerRef = React.useRef<number | null>(null);
 
-  const unreadCount = notifications.filter(n => !n.read).length;
+  const queueCount = reviewQueue.length + nicknameRequests.length;
+  const unreadCount = notifications.filter(n => !n.read).length + queueCount;
 
   useEffect(() => {
     onUnreadChange?.(unreadCount);
   }, [unreadCount, onUnreadChange]);
 
   const fetchNotifications = async () => {
-    // In a real implementation, we would subscribe to a 'notifications' table 
-    // or filter the 'messages' table for high-priority flags.
-    // For now, we simulate the fetch.
+    // Quick-need alerts are priority messages marked 'archived' by a DB trigger,
+    // so students never see them in the chat feed — but moderators can read them.
     setLoading(true);
     const { data, error } = await supabase
       .from('messages')
       .select('id, sender_id, sender_name, content, created_at')
-      .eq('status', 'approved')
+      .eq('is_priority', true)
+      .in('status', ['archived', 'approved'])
       .order('created_at', { ascending: false })
       .limit(20);
     
@@ -49,6 +63,14 @@ export const TeacherNotificationCenter: React.FC<{ onUnreadChange?: (count: numb
         read: false
       }));
       setNotifications(formatted);
+      // Spotlight the newest alert we have not seen before.
+      const fresh = formatted.find((item) => !seenIdsRef.current.has(item.id));
+      if (fresh) {
+        formatted.forEach((item) => seenIdsRef.current.add(item.id));
+        setSpotlight(fresh);
+        if (spotlightTimerRef.current) window.clearTimeout(spotlightTimerRef.current);
+        spotlightTimerRef.current = window.setTimeout(() => setSpotlight(null), 5000);
+      }
     }
     setLoading(false);
   };
@@ -59,9 +81,9 @@ export const TeacherNotificationCenter: React.FC<{ onUnreadChange?: (count: numb
     return () => clearInterval(interval);
   }, []);
 
-  const markAsRead = async (id: string) => {
-    // Update notification status in DB
+  const markAsRead = (id: string) => {
     setNotifications(prev => prev.map(n => n.id === id ? { ...n, read: true } : n));
+    if (spotlight?.id === id) setSpotlight(null);
   };
 
   return (
@@ -85,28 +107,47 @@ export const TeacherNotificationCenter: React.FC<{ onUnreadChange?: (count: numb
       </div>
       <div className="notif-list">
         {loading ? <p>Checking for alerts...</p> : 
-         notifications.length === 0 ? <p>All quiet in the lounge! ✨</p> : 
-         notifications.map(n => (
+         notifications.length === 0 && queueCount === 0 ? <p>All quiet in the lounge! ✨</p> : <>
+         {spotlight && !spotlight.read && <div className={`notif-item spotlight unread`} onClick={() => markAsRead(spotlight.id)}>
+           <div className="notif-icon">🚨</div>
+           <div className="notif-body"><strong>{spotlight.sender_name}</strong><span>{spotlight.content}</span></div>
+           <div className="notif-time">just now</div>
+         </div>}
+         {reviewQueue.map((item) => <div className="review-item" key={item.id}>
+           <div><strong>{item.sender_name}</strong><p>{item.content}</p><small>{item.moderation_reason}</small></div>
+           <div className="review-actions"><button onClick={() => onApproveMessage?.(item.id)} className="approve-button">Approve</button><button onClick={() => onRejectMessage?.(item.id)} className="reject-button">Reject</button></div>
+         </div>)}
+         {nicknameRequests.map((item) => <div className="review-item" key={item.id}>
+           <div><strong>{item.username} · nickname</strong><p>{item.nickname}</p><small>Nickname requires teacher approval</small></div>
+           <div className="review-actions"><button onClick={() => onApproveNickname?.(item.id)} className="approve-button">Approve</button><button onClick={() => onRejectNickname?.(item.id)} className="reject-button">Reject</button></div>
+         </div>)}
+         {notifications.filter(n => n.id !== spotlight?.id).map(n => (
            <div key={n.id} className={`notif-item ${n.read ? 'read' : 'unread'}`} onClick={() => markAsRead(n.id)}>
-             <div className="notif-icon">
-               {n.type === 'signal' ? '🚨' : '🔔'}
-             </div>
-             <div className="notif-body">
-               <strong>{n.sender_name}</strong>
-               <span>{n.content}</span>
-             </div>
-             <div className="notif-time">{// Simple date formatting
-               new Date(n.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-             }</div>
+             <div className="notif-icon">{n.type === 'signal' ? '🚨' : '🔔'}</div>
+             <div className="notif-body"><strong>{n.sender_name}</strong><span>{n.content}</span></div>
+             <div className="notif-time">{new Date(n.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</div>
            </div>
          ))}
+         </>}
       </div>
       <style>{`
         .notif-center { 
-          background: white; border-radius: 12px; padding: 1rem; 
+          background: #102936ee; backdrop-filter: blur(10px); border-radius: 12px; padding: 1rem; 
           box-shadow: 0 4px 12px rgba(0,0,0,0.1); max-width: 400px; 
-          border: 2px solid #eee;
+          border: 2px solid #174654; color: #d3d1c7;
         }
+        .notif-center .notif-header h3 { color: #eaffff; }
+        .notif-center .notif-item.unread { background: #123c46; border-left: 4px solid #ff4d4d; }
+        .notif-center .notif-item.read { background: #0c1c27; border-left: 4px solid #1c5262; }
+        .notif-center .notif-item .notif-body strong { color: #eaffff; }
+        .notif-center .notif-item .notif-body span { color: #9ab7bd; }
+        .notif-center .notif-clear-btn { background: #0c1c27; color: #9ab7bd; border-color: #1c5262; }
+        .notif-center .notif-clear-btn:hover:not(:disabled) { background: #123c46; color: #ffc1c1; border-color: #a95757; }
+        .notif-center .notif-count { background: #d32f2f; }
+        .notif-center .review-item { background: #102936; border-left: 4px solid #ffb54d; }
+        .notif-center .review-item strong { color: #eaffff; }
+        .notif-center .review-item p { color: #d3d1c7; margin: 4px 0; }
+        .notif-center .review-item small { color: #9ab7bd; }
         .notif-header { 
           display: flex; justify-content: space-between; align-items: center; 
           margin-bottom: 1rem; border-bottom: 1px solid #eee; padding-bottom: 0.5rem;

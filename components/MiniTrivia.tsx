@@ -21,7 +21,7 @@ function pickQuestions(category: TriviaCategory | 'all') {
   return [...pool].sort(() => Math.random() - 0.5).slice(0, QUESTIONS_PER_QUIZ);
 }
 
-export function MiniTrivia({ userId, demoMode = false }: { userId: string; demoMode?: boolean }) {
+export function MiniTrivia({ userId, demoMode = false, onBalanceChange }: { userId: string; demoMode?: boolean; onBalanceChange?: (balance: number) => void }) {
   const [category, setCategory] = useState<TriviaCategory | 'all'>('all');
   const [questions, setQuestions] = React.useState<TriviaQuestion[]>([]);
   const [started, setStarted] = React.useState(false);
@@ -31,23 +31,30 @@ export function MiniTrivia({ userId, demoMode = false }: { userId: string; demoM
   const [earned, setEarned] = React.useState(0);
   const [status, setStatus] = React.useState('Choose an answer before the stars run out.');
   const [finished, setFinished] = React.useState(false);
+  const [rewardDismissed, setRewardDismissed] = React.useState(false);
 
   const question = questions[questionIndex];
 
   const award = React.useCallback(async (reward: number) => {
     if (demoMode || !userId) return;
-    const { error } = await supabase.rpc('award_trivia_stardust', { reward_amount: reward });
-    if (error) setStatus('Correct! Your reward could not be saved. Please tell your teacher.');
-  }, [demoMode, userId]);
+    // Server clamps each answer and enforces the 500/day cap for this game.
+    const { data, error } = await supabase.rpc('award_game_stardust', { game: 'trivia', requested: reward });
+    if (error) {
+      setStatus('Correct! Your reward could not be saved. Please tell your teacher.');
+      return;
+    }
+    const result = Array.isArray(data) ? data[0] : data as { granted: number; daily_total: number; cap: number };
+    if (result && Number(result.granted) === 0) setStatus(`Correct! Daily limit reached for trivia — keep playing for fun!`);
+  }, [demoMode, userId, onBalanceChange]);
 
   const answer = useCallback((index: number | null) => {
     if (selectedIndex !== null || finished) return;
     const isCorrect = index !== null && index === question.correctIndex;
     setSelectedIndex(index);
     if (isCorrect) {
-      setEarned((value) => value + question.stardustReward);
-      setStatus(`Correct! +${question.stardustReward} Stardust`);
-      void award(question.stardustReward);
+      setEarned((value) => value + 50);
+      setStatus('Correct! +50 Stardust');
+      void award(50);
     } else {
       setStatus(index === null ? `Time's up! The answer was ${question.options[question.correctIndex]}.` : `Not quite — the answer was ${question.options[question.correctIndex]}.`);
     }
@@ -63,7 +70,7 @@ export function MiniTrivia({ userId, demoMode = false }: { userId: string; demoM
   }, [answer, finished, selectedIndex, questionIndex, started]);
 
   const startQuiz = () => {
-    setQuestions(pickQuestions(category)); setQuestionIndex(0); setSelectedIndex(null); setTimeLeft(SECONDS_PER_QUESTION); setEarned(0); setFinished(false); setStarted(true); setStatus('Choose an answer before the stars run out.');
+    setQuestions(pickQuestions(category)); setQuestionIndex(0); setSelectedIndex(null); setTimeLeft(SECONDS_PER_QUESTION); setEarned(0); setFinished(false); setRewardDismissed(false); setStarted(true); setStatus('Choose an answer before the stars run out.');
   };
 
   const exitQuiz = () => {
@@ -71,14 +78,23 @@ export function MiniTrivia({ userId, demoMode = false }: { userId: string; demoM
   };
 
   const next = () => {
-    if (questionIndex === questions.length - 1) { setFinished(true); setStatus(`Quiz complete! You earned ${earned} Stardust.`); return; }
+    if (questionIndex === questions.length - 1) {
+      setFinished(true);
+      setStatus(`Quiz complete! You earned ${earned} Stardust.`);
+      window.setTimeout(() => setRewardDismissed(true), 8000);
+      return;
+    }
     setQuestionIndex((value) => value + 1); setSelectedIndex(null); setTimeLeft(SECONDS_PER_QUESTION); setStatus('Choose an answer before the stars run out.');
   };
 
   const restart = () => startQuiz();
 
-  return <article className="trivia-card feature-card">
-    <div className="card-kicker">COSMIC ARCADE</div>
+  return <article className="trivia-card">
+    {finished && !rewardDismissed && <div className="stardust-reward-pop reward-inline" role="status">
+      <span className="reward-star">✦</span>
+      <div><strong>Quiz complete!</strong><span>You earned <b>{earned}</b> Stardust.</span></div>
+      <button className="reward-close" onClick={() => setRewardDismissed(true)} aria-label="Dismiss">✕</button>
+    </div>}
     <div className="trivia-heading"><h2>Stardust <em>Trivia</em></h2>
       {started && !finished && <button className="trivia-exit" onClick={exitQuiz} aria-label="Exit trivia">✕ Exit game</button>}
       <span className="trivia-progress">{finished ? 'DONE' : started ? `${questionIndex + 1} / ${questions.length}` : 'READY'}</span>

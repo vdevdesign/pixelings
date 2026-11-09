@@ -16,8 +16,29 @@ const avatarShopItems: ShopItem[] = avatarItems.map((item: AvatarItem) => ({
 }));
 // Every chat theme (style) item — mirrors the list in InventoryPage.tsx.
 export const CHAT_STYLE_IDS = ['cyber-style', 'style-pastel-dream', 'style-forest-grove', 'style-sunset-vibes', 'style-deep-space', 'style-candy-pop', 'style-blocky-craft', 'style-redstone-forge', 'style-kanto-league', 'style-team-rocket', 'style-green-hills', 'style-star-chili-dogs', 'style-mushroom-speedway'];
+// Username color cosmetics — must match InventoryPage.tsx's USERNAME_COLORS.
+const USERNAME_COLORS = [
+  { id: 'name-coral', name: 'Coral Name', css: '#ff8a7a', emoji: '🪸' },
+  { id: 'name-mint', name: 'Mint Name', css: '#7ef0c2', emoji: '🌿' },
+  { id: 'name-lilac', name: 'Lilac Name', css: '#c9a6ff', emoji: '💜' },
+  { id: 'name-honey', name: 'Honey Name', css: '#ffd06e', emoji: '🍯' },
+  { id: 'name-sky', name: 'Sky Name', css: '#8fd4ff', emoji: '🌤️' },
+  { id: 'name-rose', name: 'Rose Name', css: '#ff9ec4', emoji: '🌹' },
+  { id: 'name-lime', name: 'Lime Name', css: '#c6f95e', emoji: '🍋' },
+  { id: 'name-aqua', name: 'Aqua Name', css: '#7fe8ff', emoji: '🌊' },
+];
+const NAME_COLOR_PRICE = 140; // cheaper than a glow, pricier than a tag
 const fallbackItems: ShopItem[] = [
   ...avatarShopItems,
+  ...USERNAME_COLORS.map((color) => ({
+    id: color.id,
+    name: color.name,
+    description: 'Tint your chat username with this color.',
+    category: 'Identity',
+    theme: 'fun',
+    price: NAME_COLOR_PRICE,
+    emoji: color.emoji,
+  })),
   { id: 'neon-glow', name: 'Neon Username Glow', description: 'Give your chat name a soft electric aura.', category: 'Identity', theme: 'fun', price: 180, emoji: '◈' },
   { id: 'pixel-stickers', name: 'Pixel Sticker Set', description: 'Exclusive stickers for big reactions in chat.', category: 'Chat', theme: 'fun', price: 150, emoji: '☻' },
   { id: 'coin-vfx', name: 'Coin Collect VFX', description: 'Trigger a cheerful coin burst when you post.', category: 'Effects', theme: 'fun', price: 300, emoji: '✹' },
@@ -116,16 +137,12 @@ export function StardustShop({
     setOwned([...owned, item.id]); setNotice(`${item.name} unlocked!`);
   };
   const shopItems = items.filter((item) => canManage || (item.active ?? true));
-  // Theme filter: 'class' items tie to the workshops (Blender, Roblox, …),
-  // 'fun' items are just-for-fun. 'All' shows everything.
-  const [themeFilter, setThemeFilter] = React.useState<'all' | 'class' | 'fun'>('all');
-  const themeOf = (item: ShopItem): string => item.theme || 'fun';
-  const filteredItems = themeFilter === 'all' ? shopItems : shopItems.filter((item) => themeOf(item) === themeFilter);
-  const themeCounts = {
-    all: shopItems.length,
-    class: shopItems.filter((item) => themeOf(item) === 'class').length,
-    fun: shopItems.filter((item) => themeOf(item) === 'fun').length,
-  };
+  // Category filter — matches the actual grouping headers below so students
+  // can jump straight to what they want. 'All' shows everything.
+  const CATEGORY_FILTERS = ['All', 'Identity', 'Chat', 'Effects', 'Tags'] as const;
+  const [categoryFilter, setCategoryFilter] = React.useState<typeof CATEGORY_FILTERS[number]>('All');
+  const filteredItems = categoryFilter === 'All' ? shopItems : shopItems.filter((item) => item.category === categoryFilter);
+  const categoryCounts = Object.fromEntries(CATEGORY_FILTERS.map((category) => [category, category === 'All' ? shopItems.length : shopItems.filter((item) => item.category === category).length]));
   // Claim everything still unowned. Teachers claim for free; in preview mode the
   // grants are client-side only since there is no real account.
   const [claimingAll, setClaimingAll] = React.useState(false);
@@ -163,8 +180,9 @@ export function StardustShop({
   const shopGroups = [
     { label: 'Profile Pictures', items: filteredItems.filter((item) => item.id.startsWith('profile-')) },
     { label: 'Profile Backgrounds', items: filteredItems.filter((item) => item.id.startsWith('background-')) },
-    { label: 'IDENTITY', items: filteredItems.filter((item) => item.category === 'Identity' && !item.id.startsWith('profile-') && !item.id.startsWith('background-')) },
-    { label: 'Chat', items: filteredItems.filter((item) => item.category === 'Chat') },
+    { label: 'Identity', items: filteredItems.filter((item) => item.category === 'Identity' && !item.id.startsWith('profile-') && !item.id.startsWith('background-')) },
+    { label: 'Chat Themes', items: filteredItems.filter((item) => item.category === 'Chat' && CHAT_STYLE_IDS.includes(item.id)) },
+    { label: 'Chat Extras', items: filteredItems.filter((item) => item.category === 'Chat' && !CHAT_STYLE_IDS.includes(item.id)) },
     { label: 'Effects', items: filteredItems.filter((item) => item.category === 'Effects') },
     { label: 'Tags', items: filteredItems.filter((item) => item.category === 'Tags') },
   ].filter((group) => group.items.length > 0);
@@ -186,11 +204,13 @@ export function StardustShop({
   return <section className="shop-section">
     <div className="shop-toolbar">
       <div className="theme-filter">
-        <button className={`theme-filter-btn ${themeFilter === 'all' ? 'active' : ''}`} onClick={() => setThemeFilter('all')}>All · {themeCounts.all}</button>
-        <button className={`theme-filter-btn ${themeFilter === 'class' ? 'active' : ''}`} onClick={() => setThemeFilter('class')}>🎓 Class · {themeCounts.class}</button>
-        <button className={`theme-filter-btn ${themeFilter === 'fun' ? 'active' : ''}`} onClick={() => setThemeFilter('fun')}>✨ Fun · {themeCounts.fun}</button>
+        {CATEGORY_FILTERS.map((category) => (
+          <button key={category} className={`theme-filter-btn ${categoryFilter === category ? 'active' : ''}`} onClick={() => setCategoryFilter(category)}>
+            {category} · {categoryCounts[category]}
+          </button>
+        ))}
       </div>
-      <div className="shop-heading-actions">{(canManage || demoMode) && claimableCount > 0 && <button className="inventory-toggle" onClick={claimAll} disabled={claimingAll}>{claimingAll ? 'Claiming…' : `Claim all · ${claimableCount}`}</button>}<div className="wallet">✦ <strong>{balance ?? 0}</strong><span>STARDUST</span></div></div>
+      <div className="shop-heading-actions">{(canManage || demoMode) && claimableCount > 0 && <button className="inventory-toggle" onClick={claimAll} disabled={claimingAll}>{claimingAll ? 'Claiming…' : `Claim all · ${claimableCount}`}</button>}</div>
     </div>
     {/* Shop items are grouped by type: Profile pictures, Profile backgrounds, then the other categories. */}
       {shopGroups.map((group) => {
@@ -202,7 +222,13 @@ export function StardustShop({
         <div className="shop-grid">{visibleItems.map((item) => { const avatar = avatarFor(item.id); return <article className={`shop-item ${avatar ? `shop-avatar-item shop-avatar-${avatar.kind}` : ''} ${(item.active ?? true) ? '' : 'shop-item-hidden'}`} key={item.id}><div className="item-icon">{avatar ? <img className="shop-item-thumb" src={avatar.src} alt={item.name} loading="lazy" /> : item.emoji}</div><h4>{item.name}</h4>
           {item.id === 'neon-glow' && <div className="item-preview"><span className="preview-glow-name">MissV</span></div>}
           {item.id === 'coin-vfx' && <div className="item-preview"><div className="preview-coin-burst"><span>🪙</span><span>🪙</span><span>🪙</span></div></div>}
-          {CHAT_STYLE_IDS.includes(item.id) && <div className="item-preview"><div className={`preview-theme-msg preview-${item.id}`}>hey pixelings! 👋</div></div>}
+          {(CHAT_STYLE_IDS.includes(item.id) || USERNAME_COLORS.some((color) => color.id === item.id)) && (
+            <div className="item-preview">
+              {USERNAME_COLORS.some((color) => color.id === item.id)
+                ? <span className="preview-glow-name" style={{ color: USERNAME_COLORS.find((color) => color.id === item.id)!.css }}>{USERNAME_COLORS.find((color) => color.id === item.id)!.name.replace(' Name', '')}</span>
+                : <div className={`preview-theme-msg preview-${item.id}`}>hey pixelings! 👋</div>}
+            </div>
+          )}
         <button onClick={() => buy(item)} disabled={owned.includes(item.id)}>{owned.includes(item.id) ? 'Owned ✓' : (canManage || demoMode) ? 'Take it · Free' : `Buy · ${item.price} ✦`}</button>{canManage && <button className="item-visibility-toggle" onClick={() => toggleActive(item)}>{(item.active ?? true) ? 'Public 👁' : 'Hidden 🙈'}</button>}</article>; })}</div>
         {group.items.length > COLLAPSED_LIMIT && <button className="view-all-btn" onClick={() => setExpandedGroups((state) => ({ ...state, [group.label]: !state[group.label] }))}>{collapsed ? `View all ${hiddenCount} more · ${group.items.length}` : 'Show less'}</button>}
       </React.Fragment>;

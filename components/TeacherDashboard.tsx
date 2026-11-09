@@ -340,13 +340,13 @@ export const TeacherDashboard: React.FC = () => {
           width: 34px;
           height: 34px;
           border-radius: 50%;
-          border: 1px solid #ddd;
-          background: #f8f9fa;
-          color: #444;
+          border: 1px solid #1c5262;
+          background: #0c1c27;
+          color: #d3d1c7;
           cursor: pointer;
           transition: all 0.2s;
         }
-        .slot-btn:hover:not(:disabled) { background: #eef2f3; border-color: #ccc; }
+        .slot-btn:hover:not(:disabled) { background: #123c46; border-color: #00f5ff; }
         .slot-btn:disabled { opacity: 0.4; cursor: not-allowed; }
         .student-form-footer {
           display: flex;
@@ -377,20 +377,22 @@ export const TeacherDashboard: React.FC = () => {
           z-index: 1000;
         }
         .confirm-dialog {
-          background: white;
+          background: #0c1c27f5;
+          border: 1px solid #1c5262;
           border-radius: 16px;
           padding: 1.75rem 2rem;
           max-width: 420px;
           width: calc(100% - 2rem);
-          box-shadow: 0 20px 50px rgba(0, 0, 0, 0.25);
+          box-shadow: 0 20px 50px rgba(0, 0, 0, 0.45);
         }
-        .confirm-dialog h3 { margin: 0 0 0.75rem; font-size: 1.2rem; color: #222; }
-        .confirm-dialog p { margin: 0 0 1.5rem; color: #555; font-size: 0.95rem; line-height: 1.5; }
+        .confirm-dialog h3 { margin: 0 0 0.75rem; font-size: 1.2rem; color: #eaffff; }
+        .confirm-dialog p { margin: 0 0 1.5rem; color: #9ab7bd; font-size: 0.95rem; line-height: 1.5; }
         .confirm-actions { display: flex; justify-content: flex-end; gap: 0.75rem; }
         .confirm-cancel {
           padding: 0.55rem 1.1rem;
-          background: #f8f9fa;
-          border: 1px solid #ddd;
+          background: #102936;
+          color: #d3d1c7;
+          border: 1px solid #1c5262;
           border-radius: 8px;
           cursor: pointer;
           font-weight: 500;
@@ -409,14 +411,16 @@ export const TeacherDashboard: React.FC = () => {
           padding: 2rem; 
           max-width: 1100px; 
           margin: 0 auto; 
-          font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; 
-          color: #333; 
+          font-family: inherit; 
+          color: #d3d1c7; 
         }
+        .teacher-dashboard h1, .teacher-dashboard h2, .teacher-dashboard h3, .teacher-dashboard strong { color: #eaffff; }
+        .teacher-dashboard p, .teacher-dashboard .subtitle, .teacher-dashboard .input-group label { color: #9ab7bd; }
         .dashboard-nav { 
           display: flex; 
           gap: 1rem; 
           margin-bottom: 2rem; 
-          border-bottom: 2px solid #eee; 
+          border-bottom: 2px solid #1c5262; 
           padding-bottom: 1rem; 
         }
         .dashboard-nav button { 
@@ -426,7 +430,7 @@ export const TeacherDashboard: React.FC = () => {
           cursor: pointer; 
           font-size: 1rem; 
           font-weight: 600; 
-          color: #666; 
+          color: #9ab7bd; 
           border-radius: 8px; 
           transition: all 0.2s;
         }
@@ -439,19 +443,20 @@ export const TeacherDashboard: React.FC = () => {
         @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
         
         .manager-card, .student-list-card { 
-          background: white; 
+          background: #0c1c27d9; 
+          backdrop-filter: blur(10px);
           padding: 2rem; 
           border-radius: 16px; 
-          box-shadow: 0 4px 20px rgba(0,0,0,0.08); 
+          box-shadow: 0 4px 20px rgba(0,0,0,0.35); 
           margin-bottom: 2rem; 
-          border: 1px solid #f0f0f0;
+          border: 1px solid #1c5262;
         }
         .card-title { 
           font-size: 1.4rem; 
           margin-bottom: 1.5rem; 
-          color: #222; 
+          color: #eaffff; 
           font-weight: 700;
-          border-bottom: 2px solid #f5f5f5;
+          border-bottom: 2px solid #123c46;
           padding-bottom: 0.75rem;
         }
         .roster-header {
@@ -491,31 +496,34 @@ export const TeacherDashboard: React.FC = () => {
         }
         .input-group input { 
           padding: 0.7rem; 
-          border: 1px solid #ddd; 
+          border: 1px solid #1c5262; 
           border-radius: 8px; 
           min-width: 180px; 
+          color: #eaffff; 
+          background: #07141d;
           transition: border-color 0.2s;
         }
+        .input-group input::placeholder { color: #5b7a86; }
         .input-group input:focus {
           outline: none;
-          border-color: #4CAF50;
-          box-shadow: 0 0 0 2px rgba(76, 175, 80, 0.2);
+          border-color: #00f5ff;
+          box-shadow: 0 0 0 2px rgba(0, 245, 255, 0.2);
         }
         .generate-code-btn {
           padding: 0.5rem 1rem; 
-          background: #f8f9fa; 
-          border: 1px solid #ddd; 
+          background: #0c1c27; 
+          border: 1px solid #1c5262; 
           border-radius: 20px; 
           cursor: pointer; 
           font-size: 0.85rem; 
-          color: #666; 
+          color: #9ab7bd; 
           transition: all 0.2s;
           font-weight: 500;
         }
         .generate-code-btn:hover { 
-          background: #eef2f3; 
-          color: #333; 
-          border-color: #ccc;
+          background: #123c46; 
+          color: #eaffff; 
+          border-color: #00f5ff;
         }
         .submit-btn { 
           padding: 0.7rem 1.5rem; 
@@ -545,16 +553,16 @@ export const TeacherDashboard: React.FC = () => {
         .text-right { text-align: right !important; }
         .student-table td { 
           padding: 1rem; 
-          border-bottom: 1px solid #f0f0f0; 
-          color: #444;
+          border-bottom: 1px solid #123c46; 
+          color: #d3d1c7;
           font-size: 0.95rem;
         }
         .code-pill {
-          background: #f0f0f0;
+          background: #07141d;
           padding: 2px 8px;
           border-radius: 4px;
           font-family: monospace;
-          color: #888;
+          color: #9ab7bd;
           font-size: 0.85rem;
         }
         .action-cell { 
@@ -565,20 +573,23 @@ export const TeacherDashboard: React.FC = () => {
         }
         .action-btn { 
           padding: 0.5rem 1rem; 
-          background: #f8f9fa; 
-          border: 1px solid #ddd; 
+          background: #0c1c27; 
+          border: 1px solid #1c5262; 
           border-radius: 6px; 
+          color: #d3d1c7;
           cursor: pointer; 
           font-size: 0.85rem; 
           transition: all 0.2s;
         }
-        .action-btn:hover { background: #eee; }
+        .action-btn:hover { background: #123c46; }
         .action-btn.regen-btn { 
-          background: #fffbe6; 
-          border-color: #ffe58f; 
+          background: #123c46; 
+          border-color: #ffe58f88; 
+          color: #fff4b0;
           font-weight: 500;
         }
-        .action-btn.regen-btn:hover { background: #fff8d1; }
+        .action-btn.regen-btn:hover { background: #1a4b55; }
+        .table-head th { color: #5b7a86; }
         .manager-error { color: #d32f2f; margin-top: 1rem; font-size: 0.9rem; font-weight: 500; }
         .quick-needs-grid { 
           display: grid; 
@@ -591,27 +602,27 @@ export const TeacherDashboard: React.FC = () => {
           align-items: center; 
           gap: 1rem; 
           padding: 1rem; 
-          background: #f9f9f9; 
-          border: 1px solid #eee; 
+          background: #0c1c27b3; 
+          border: 1px solid #1c5262; 
           border-radius: 12px; 
           position: relative; 
           transition: transform 0.1s, box-shadow 0.2s;
         }
         .need-item:hover { 
           transform: scale(1.02); 
-          background: #fff; 
-          box-shadow: 0 2px 8px rgba(0,0,0,0.05); 
+          background: #102936; 
+          box-shadow: 0 2px 8px rgba(0,0,0,0.25); 
         }
         .need-emoji { 
           font-size: 1.8rem; 
-          background: white; 
+          background: #07141d; 
           width: 50px; 
           height: 50px; 
           display: flex; 
           align-items: center; 
           justify-content: center; 
           border-radius: 10px; 
-          box-shadow: 0 2px 4px rgba(0,0,0,0.1); 
+          box-shadow: 0 2px 4px rgba(0,0,0,0.3); 
         }
         .need-info { 
           display: flex; 
@@ -620,12 +631,12 @@ export const TeacherDashboard: React.FC = () => {
         }
         .need-label { 
           font-size: 1rem; 
-          color: #333; 
+          color: #eaffff; 
           font-weight: 600;
         }
         .need-msg { 
           font-size: 0.85rem; 
-          color: #666; 
+          color: #9ab7bd; 
         }
         .delete-btn { 
           background: transparent; 

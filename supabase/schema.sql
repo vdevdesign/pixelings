@@ -29,12 +29,31 @@ update public.stardust_shop set theme = 'fun';
 -- Retire the generic VIP title (kept as an inactive row: inventory rows
 -- reference it via foreign key, so the shop row cannot be hard-deleted).
 update public.stardust_shop set active = false where id = 'vip-title';
--- Hide profile pictures whose bundled artwork does not exist, so students
--- never buy an item that cannot be shown on their profile.
+-- Hide profile pictures and backgrounds whose artwork was retired
+-- (baby dragon, blushy ghost, chomp monster, little night bat). Rows stay
+-- because inventory references them via foreign key.
 update public.stardust_shop set active = false where id in (
   'profile-baby-dragon', 'profile-blushy-ghost', 'profile-chomp-monster',
-  'profile-little-night-bat'
+  'profile-little-night-bat',
+  'background-baby-dragon', 'background-blushy-ghost', 'background-chomp-monster',
+  'background-little-night-bat'
 );
+-- Safety net: register the username-color items in databases created before
+-- they existed.
+insert into public.stardust_shop (id, name, description, category, price, emoji, sort_order) values
+  ('name-coral', 'Coral Name', 'Tint your chat username with a warm coral hue.', 'Identity', 140, '🪸', 4),
+  ('name-mint', 'Mint Name', 'Tint your chat username with a fresh mint hue.', 'Identity', 140, '🌿', 5),
+  ('name-lilac', 'Lilac Name', 'Tint your chat username with a soft lilac hue.', 'Identity', 140, '💜', 6),
+  ('name-honey', 'Honey Name', 'Tint your chat username with a golden honey hue.', 'Identity', 140, '🍯', 7),
+  ('name-sky', 'Sky Name', 'Tint your chat username with a clear sky hue.', 'Identity', 140, '🌤️', 8),
+  ('name-rose', 'Rose Name', 'Tint your chat username with a rosy pink hue.', 'Identity', 140, '🌹', 9),
+  ('name-lime', 'Lime Name', 'Tint your chat username with a zesty lime hue.', 'Identity', 140, '🍋', 10),
+  ('name-aqua', 'Aqua Name', 'Tint your chat username with a cool aqua hue.', 'Identity', 140, '🌊', 11)
+on conflict (id) do nothing;
+-- Refresh prices and labels so rerunning schema.sql keeps the shop in sync.
+update public.stardust_shop set price = 140 where id in ('name-coral','name-mint','name-lilac','name-honey','name-sky','name-rose','name-lime','name-aqua');
+update public.stardust_shop set price = 250 where id in ('cyber-style','style-pastel-dream','style-forest-grove','style-sunset-vibes','style-deep-space','style-candy-pop');
+update public.stardust_shop set price = 320 where id in ('style-blocky-craft','style-redstone-forge','style-kanto-league','style-team-rocket','style-green-hills','style-star-chili-dogs','style-mushroom-speedway');
 create table if not exists public.stardust_wallets (
   user_id uuid primary key references auth.users(id) on delete cascade,
   balance integer not null default 650 check (balance >= 0),
@@ -58,6 +77,15 @@ create table if not exists public.stardust_inventory (
 insert into public.stardust_shop (id, name, description, category, price, emoji, sort_order) values
   ('neon-glow', 'Neon Username Glow', 'Give your chat name a soft electric aura.', 'Identity', 180, '◈', 2),
  ('vip-title', 'VIP Chat Title', 'A tiny [VIP] tag to flex beside your name.', 'Identity', 250, '★', 3),
+ -- Username color cosmetics: tint the chat name. Cheaper than a glow, pricier than a tag.
+ ('name-coral', 'Coral Name', 'Tint your chat username with a warm coral hue.', 'Identity', 140, '🪸', 4),
+ ('name-mint', 'Mint Name', 'Tint your chat username with a fresh mint hue.', 'Identity', 140, '🌿', 5),
+ ('name-lilac', 'Lilac Name', 'Tint your chat username with a soft lilac hue.', 'Identity', 140, '💜', 6),
+ ('name-honey', 'Honey Name', 'Tint your chat username with a golden honey hue.', 'Identity', 140, '🍯', 7),
+ ('name-sky', 'Sky Name', 'Tint your chat username with a clear sky hue.', 'Identity', 140, '🌤️', 8),
+ ('name-rose', 'Rose Name', 'Tint your chat username with a rosy pink hue.', 'Identity', 140, '🌹', 9),
+ ('name-lime', 'Lime Name', 'Tint your chat username with a zesty lime hue.', 'Identity', 140, '🍋', 10),
+ ('name-aqua', 'Aqua Name', 'Tint your chat username with a cool aqua hue.', 'Identity', 140, '🌊', 11),
 
  -- Wearable chat titles. Each is its own item so players can collect and show them off.
  ('tag-pixel-coin-collector', 'Pixel Coin Collector', 'Earned by hoarding every last pixel coin on the arcade floor.', 'Tags', 100, '🪙', 60),
@@ -74,28 +102,25 @@ insert into public.stardust_shop (id, name, description, category, price, emoji,
  ('tag-glitch-hunter', 'Glitch Hunter', 'An elite bug exterminator who tracks down code errors before they crash the server.', 'Tags', 200, '🐛', 71),
  ('pixel-stickers', 'Pixel Sticker Set', 'Exclusive stickers for big reactions in chat.', 'Chat', 150, '☻', 4),
  ('coin-vfx', 'Coin Collect VFX', 'Trigger a cheerful coin burst when you post.', 'Effects', 300, '✹', 5),
- ('cyber-style', 'Cyberpunk Chat Style', 'A dark neon skin for your chat messages.', 'Chat', 220, '⌁', 6),
- ('style-pastel-dream', 'Pastel Dream Theme', 'A soft cloudy skin for your chat in dreamy pastels.', 'Chat', 220, '☁', 7),
- ('style-forest-grove', 'Forest Grove Theme', 'A leafy green skin for your chat messages.', 'Chat', 220, '☘', 8),
- ('style-sunset-vibes', 'Sunset Vibes Theme', 'A warm orange-pink skin for your chat messages.', 'Chat', 220, '☀', 9),
- ('style-deep-space', 'Deep Space Theme', 'A starry midnight skin for your chat messages.', 'Chat', 220, '✦', 10),
- ('style-candy-pop', 'Candy Pop Theme', 'A bubbly pink skin for your chat messages.', 'Chat', 220, '♡', 11),
+ ('cyber-style', 'Cyberpunk Chat Style', 'A dark neon skin for your chat messages.', 'Chat', 250, '⌁', 6),
+ ('style-pastel-dream', 'Pastel Dream Theme', 'A soft cloudy skin for your chat in dreamy pastels.', 'Chat', 250, '☁', 7),
+ ('style-forest-grove', 'Forest Grove Theme', 'A leafy green skin for your chat messages.', 'Chat', 250, '☘', 8),
+ ('style-sunset-vibes', 'Sunset Vibes Theme', 'A warm orange-pink skin for your chat messages.', 'Chat', 250, '☀', 9),
+ ('style-deep-space', 'Deep Space Theme', 'A starry midnight skin for your chat messages.', 'Chat', 250, '✦', 10),
+ ('style-candy-pop', 'Candy Pop Theme', 'A bubbly pink skin for your chat messages.', 'Chat', 250, '♡', 11),
  -- Game-inspired chat themes (Minecraft, creature-collecting, speedster vibes).
- ('style-blocky-craft', 'Blocky Craft Theme', 'A pixelated dirt-and-grass skin straight out of a sandbox world.', 'Chat', 250, '⛏', 12),
- ('style-redstone-forge', 'Redstone Forge Theme', 'Molten redstone energy powers this deep-slate workshop skin.', 'Chat', 250, '🔥', 13),
- ('style-kanto-league', 'Kanto League Theme', 'An electric yellow-blue skin for champion-level trainers.', 'Chat', 250, '⚡', 14),
- ('style-team-rocket', 'Team Rocket Theme', 'A mischievous red-and-black skin for team villains.', 'Chat', 250, '🚀', 15),
- ('style-green-hills', 'Green Hills Theme', 'A speedy blue-green skin inspired by rolling hillside loops.', 'Chat', 250, '🌀', 16),
- ('style-star-chili-dogs', 'Chili Dog Nights Theme', 'A golden starry night skin for fast heroes with big appetites.', 'Chat', 250, '⭐', 17),
- ('style-mushroom-speedway', 'Mushroom Speedway Theme', 'A kart-racing red mushroom skin with rainbow-road sparkles.', 'Chat', 250, '🍄', 18),
+ ('style-blocky-craft', 'Blocky Craft Theme', 'A pixelated dirt-and-grass skin straight out of a sandbox world.', 'Chat', 320, '⛏', 12),
+ ('style-redstone-forge', 'Redstone Forge Theme', 'Molten redstone energy powers this deep-slate workshop skin.', 'Chat', 320, '🔥', 13),
+ ('style-kanto-league', 'Kanto League Theme', 'An electric yellow-blue skin for champion-level trainers.', 'Chat', 320, '⚡', 14),
+ ('style-team-rocket', 'Team Rocket Theme', 'A mischievous red-and-black skin for team villains.', 'Chat', 320, '🚀', 15),
+ ('style-green-hills', 'Green Hills Theme', 'A speedy blue-green skin inspired by rolling hillside loops.', 'Chat', 320, '🌀', 16),
+ ('style-star-chili-dogs', 'Chili Dog Nights Theme', 'A golden starry night skin for fast heroes with big appetites.', 'Chat', 320, '⭐', 17),
+ ('style-mushroom-speedway', 'Mushroom Speedway Theme', 'A kart-racing red mushroom skin with rainbow-road sparkles.', 'Chat', 320, '🍄', 18),
  -- Profile pictures — each one is its own purchasable shop item. Rows whose
  -- bundled artwork does not exist (baby dragon, blushy ghost, chomp monster,
  -- little night bat) are kept inactive instead of removed because inventory
  -- rows reference them by foreign key.
- ('profile-baby-dragon', 'Baby Dragon', 'A baby dragon profile picture for your Pixelings profile.', 'Identity', 120, '🐲', 10),
  ('profile-bamboo-panda', 'Bamboo Panda', 'A bamboo panda profile picture for your Pixelings profile.', 'Identity', 120, '🐼', 11),
- ('profile-blushy-ghost', 'Blushy Ghost', 'A blushy ghost profile picture for your Pixelings profile.', 'Identity', 120, '👻', 12),
- ('profile-chomp-monster', 'Chomp Monster', 'A chomp monster profile picture for your Pixelings profile.', 'Identity', 120, '👾', 13),
  ('profile-cotton-bunny', 'Cotton Bunny', 'A cotton bunny profile picture for your Pixelings profile.', 'Identity', 120, '🐰', 14),
  ('profile-cyclops-jelly', 'Cyclops Jelly', 'A cyclops jelly profile picture for your Pixelings profile.', 'Identity', 120, '🪼', 15),
  ('profile-deep-sea-octo', 'Deep Sea Octo', 'A deep sea octo profile picture for your Pixelings profile.', 'Identity', 120, '🐙', 16),
@@ -103,7 +128,6 @@ insert into public.stardust_shop (id, name, description, category, price, emoji,
  ('profile-happy-slime', 'Happy Slime', 'A happy slime profile picture for your Pixelings profile.', 'Identity', 120, '🟢', 18),
  ('profile-honey-bear', 'Honey Bear', 'A honey bear profile picture for your Pixelings profile.', 'Identity', 120, '🐻', 19),
  ('profile-lily-pad-frog', 'Lily Pad Frog', 'A lily pad frog profile picture for your Pixelings profile.', 'Identity', 120, '🐸', 20),
- ('profile-little-night-bat', 'Little Night Bat', 'A little night bat profile picture for your Pixelings profile.', 'Identity', 120, '🦇', 21),
  ('profile-midnight-cat', 'Midnight Cat', 'A midnight cat profile picture for your Pixelings profile.', 'Identity', 120, '🐱', 22),
  ('profile-moon-owl', 'Moon Owl', 'A moon owl profile picture for your Pixelings profile.', 'Identity', 120, '🦉', 23),
  ('profile-moonlit-wolf', 'Moonlit Wolf', 'A moonlit wolf profile picture for your Pixelings profile.', 'Identity', 120, '🐺', 24),
@@ -113,19 +137,15 @@ insert into public.stardust_shop (id, name, description, category, price, emoji,
  ('profile-smiley-axolotl', 'Smiley Axolotl', 'A smiley axolotl profile picture for your Pixelings profile.', 'Identity', 120, '🐠', 28),
  ('profile-toadstool-sprite', 'Toadstool Sprite', 'A toadstool sprite profile picture for your Pixelings profile.', 'Identity', 120, '🍄', 29),
  -- Profile backgrounds (16) — each one is its own purchasable shop item.
- ('background-baby-dragon', 'Baby Dragon Scene', 'A baby dragon background for your Pixelings profile.', 'Identity', 150, '🐲', 30),
- ('background-bamboo-panda', 'Bamboo Panda Scene', 'A bamboo panda background for your Pixelings profile.', 'Identity', 150, '🐼', 31),
- ('background-blushy-ghost', 'Blushy Ghost Scene', 'A blushy ghost background for your Pixelings profile.', 'Identity', 150, '👻', 32),
- ('background-chomp-monster', 'Chomp Monster Scene', 'A chomp monster background for your Pixelings profile.', 'Identity', 150, '👾', 33),
- ('background-cotton-bunny', 'Cotton Bunny Scene', 'A cotton bunny background for your Pixelings profile.', 'Identity', 150, '🐰', 34),
+ ('background-bamboo-panda', 'Bamboo Panda', 'A bamboo panda background for your Pixelings profile.', 'Identity', 150, '🐼', 31),
+ ('background-cotton-bunny', 'Cotton Bunny', 'A cotton bunny background for your Pixelings profile.', 'Identity', 150, '🐰', 34),
  ('background-cyclops-jelly', 'Cyclops Jelly Scene', 'A cyclops jelly background for your Pixelings profile.', 'Identity', 150, '🪼', 35),
  ('background-deep-sea-octo', 'Deep Sea Octo Scene', 'A deep sea octo background for your Pixelings profile.', 'Identity', 150, '🐙', 36),
  ('background-fuzzy-horn-monster', 'Fuzzy Horn Monster Scene', 'A fuzzy horn monster background for your Pixelings profile.', 'Identity', 150, '🦕', 37),
  ('background-happy-slime', 'Happy Slime Scene', 'A happy slime background for your Pixelings profile.', 'Identity', 150, '🟢', 38),
  ('background-honey-bear', 'Honey Bear Scene', 'A honey bear background for your Pixelings profile.', 'Identity', 150, '🐻', 39),
- ('background-lily-pad-frog', 'Lily Pad Frog Scene', 'A lily pad frog background for your Pixelings profile.', 'Identity', 150, '🐸', 40),
- ('background-little-night-bat', 'Little Night Bat Scene', 'A little night bat background for your Pixelings profile.', 'Identity', 150, '🦇', 41),
- ('background-midnight-cat', 'Midnight Cat Scene', 'A midnight cat background for your Pixelings profile.', 'Identity', 150, '🐱', 42),
+ ('background-lily-pad-frog', 'Lily Pad Frog', 'A lily pad frog background for your Pixelings profile.', 'Identity', 150, '🐸', 40),
+ ('background-midnight-cat', 'Midnight Cat', 'A midnight cat background for your Pixelings profile.', 'Identity', 150, '🐱', 42),
  ('background-moon-owl', 'Moon Owl Scene', 'A moon owl background for your Pixelings profile.', 'Identity', 150, '🦉', 43),
  ('background-moonlit-wolf', 'Moonlit Wolf Scene', 'A moonlit wolf background for your Pixelings profile.', 'Identity', 150, '🐺', 44),
  ('background-quiet-alien', 'Quiet Alien Scene', 'A quiet alien background for your Pixelings profile.', 'Identity', 150, '👽', 45),
@@ -566,6 +586,10 @@ end $$;
 insert into public.sessions (name, status)
 select 'Pixelings Lounge', 'live'
 where not exists (select 1 from public.sessions where name = 'Pixelings Lounge');
+
+insert into public.sessions (name, status)
+select 'Teacher Lounge', 'live'
+where not exists (select 1 from public.sessions where name = 'Teacher Lounge');
 
 -- One live room per class. Messages remain isolated by session_id.
 insert into public.sessions (name, status)
