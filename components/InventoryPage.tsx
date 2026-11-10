@@ -3,8 +3,8 @@ import { supabase } from '../lib/supabaseClient';
 import { avatarItems, avatarItemById } from './avatarItems';
 
 type ChatSlot = 'glow' | 'tag' | 'stickers' | 'vfx' | 'style';
-// Username colors live in the Identity category of the shop. Equipping one
-// tints the student's chat name with that color.
+// Username colors live in the Identity category of the shop and equip into
+// their own 'nameColor' slot, so a color can be worn with or without the glow.
 export type UsernameColor = { id: string; name: string; css: string; emoji: string };
 export const USERNAME_COLORS: UsernameColor[] = [
   { id: 'name-coral', name: 'Coral Name', css: '#ff8a7a', emoji: '🪸' },
@@ -41,22 +41,26 @@ const CHAT_STYLE_PREVIEWS: Record<string, string> = {
   'style-star-chili-dogs': '⭐ Golden starry night',
   'style-mushroom-speedway': '🍄 Kart-racing sparkles',
 };
-const slotFor = (id: string): ChatSlot | null => usernameColorOf(id) ? 'glow' : id === 'neon-glow' ? 'glow' : id === 'pixel-stickers' ? 'stickers' : id === 'coin-vfx' ? 'vfx' : CHAT_STYLE_IDS.includes(id) ? 'style' : id.startsWith('tag-') ? 'tag' : null;
+const slotFor = (id: string): ChatSlot | null => usernameColorOf(id) || id === 'neon-glow' ? 'glow' : id === 'pixel-stickers' ? 'stickers' : id === 'coin-vfx' ? 'vfx' : CHAT_STYLE_IDS.includes(id) ? 'style' : id.startsWith('tag-') ? 'tag' : null;
 // Sections with more than this many items collapse behind a "View all" toggle.
 const COLLAPSED_LIMIT = 8;
 
-export function InventoryPage({ accountId, demoMode, balance, ownedItems, onOwnedChange, onBalanceChange, onProfileChange, onChatCosmeticsChange }: { accountId: string; demoMode?: boolean; balance: number | null; ownedItems: string[]; onOwnedChange: (items: string[]) => void; onBalanceChange: (balance: number | null) => void; onProfileChange?: (profileId: string, backgroundId: string) => void; onChatCosmeticsChange?: (cosmetics: Record<ChatSlot, string>) => void }) {
+export function InventoryPage({ accountId, demoMode, balance, ownedItems, onOwnedChange, onBalanceChange, onProfileChange, onChatCosmeticsChange }: { accountId: string; demoMode?: boolean; balance: number | null; ownedItems: string[]; onOwnedChange: (items: string[]) => void; onBalanceChange: (balance: number | null) => void; onProfileChange?: (profileId: string, backgroundId: string) => void; onChatCosmeticsChange?: (cosmetics: Record<ChatSlot, string> & { nameColor?: string }) => void }) {
   const [catalog, setCatalog] = React.useState<Record<string, { name: string; emoji: string }>>({});
-  const [equipped, setEquipped] = React.useState<Record<ChatSlot, string>>({ glow: '', tag: '', stickers: '', vfx: '', style: '' });
+  const [equipped, setEquipped] = React.useState<Record<ChatSlot, string> & { nameColor: string }>({ glow: '', tag: '', stickers: '', vfx: '', style: '', nameColor: '' });
   const [profile, setProfile] = React.useState('profile-happy-slime');
   const [background, setBackground] = React.useState('background-happy-slime');
   const [notice, setNotice] = React.useState('');
   const [busy, setBusy] = React.useState<string | null>(null);
   const [expandedGroups, setExpandedGroups] = React.useState<Record<string, boolean>>({});
   React.useEffect(() => { if (!demoMode) supabase.from('stardust_shop').select('id,name,emoji').then(({ data }) => { if (data) setCatalog(Object.fromEntries(data.map((row: any) => [row.id, row]))); }); }, [demoMode]);
-  React.useEffect(() => { if (!demoMode && accountId) supabase.from('profiles').select('avatar_url,background_url,equipped_chat_glow,equipped_chat_tag,equipped_chat_stickers,equipped_chat_vfx,equipped_chat_style').eq('id', accountId).single().then(({ data }) => { if (data) { setProfile(data.avatar_url || 'profile-happy-slime'); setBackground(data.background_url || 'background-happy-slime'); setEquipped({ glow: data.equipped_chat_glow || '', tag: data.equipped_chat_tag || '', stickers: data.equipped_chat_stickers || '', vfx: data.equipped_chat_vfx || '', style: data.equipped_chat_style || '' }); } }); }, [demoMode, accountId]);
-  const save = async (nextProfile: string, nextBackground: string, next: Record<ChatSlot, string>) => { if (demoMode || !accountId) return true; const { error } = await supabase.from('profiles').update({ avatar_url: nextProfile || null, background_url: nextBackground || null, equipped_chat_glow: next.glow || null, equipped_chat_tag: next.tag || null, equipped_chat_stickers: next.stickers || null, equipped_chat_vfx: next.vfx || null, equipped_chat_style: next.style || null }).eq('id', accountId); if (error) { setNotice('Could not save that equipment change.'); return false; } return true; };
-  const change = async (id: string, remove: boolean) => { setBusy(id); setNotice(''); const next = { ...equipped }; const slot = slotFor(id); if (slot) next[slot] = remove ? '' : id; const item = avatarItemById.get(id); const nextProfile = item?.kind === 'profile' ? (remove ? '' : id) : profile; const nextBackground = item?.kind === 'background' ? (remove ? '' : id) : background; if (await save(nextProfile, nextBackground, next)) { setProfile(nextProfile); setBackground(nextBackground); setEquipped(next); onProfileChange?.(nextProfile, nextBackground); onChatCosmeticsChange?.(next); setNotice(`${catalog[id]?.name || item?.name || id} ${remove ? 'unequipped' : 'equipped'}!`); } setBusy(null); };
+  React.useEffect(() => { if (!demoMode && accountId) supabase.from('profiles').select('avatar_url,background_url,equipped_chat_glow,equipped_chat_tag,equipped_chat_stickers,equipped_chat_vfx,equipped_chat_style,equipped_chat_name_color').eq('id', accountId).single().then(({ data }) => { if (data) { setProfile(data.avatar_url || 'profile-happy-slime'); setBackground(data.background_url || 'background-happy-slime'); setEquipped({ glow: data.equipped_chat_glow || '', tag: data.equipped_chat_tag || '', stickers: data.equipped_chat_stickers || '', vfx: data.equipped_chat_vfx || '', style: data.equipped_chat_style || '', nameColor: (data as { equipped_chat_name_color?: string | null }).equipped_chat_name_color || '' }); } }); }, [demoMode, accountId]);
+  const save = async (nextProfile: string, nextBackground: string, next: Record<ChatSlot, string> & { nameColor: string }) => { if (demoMode || !accountId) return true; const { error } = await supabase.from('profiles').update({ avatar_url: nextProfile || null, background_url: nextBackground || null, equipped_chat_glow: next.glow || null, equipped_chat_tag: next.tag || null, equipped_chat_stickers: next.stickers || null, equipped_chat_vfx: next.vfx || null, equipped_chat_style: next.style || null, equipped_chat_name_color: next.nameColor || null }).eq('id', accountId); if (error) { setNotice('Could not save that equipment change.'); return false; } return true; };
+  const change = async (id: string, remove: boolean) => { setBusy(id); setNotice(''); const next = { ...equipped }; const slot = slotFor(id); if (slot) next[slot] = remove ? '' : id; // Colors and glow share the 'glow' server slot for legacy reads, but the
+    // client uses nameColor for colors and glow for the aura.
+    if (usernameColorOf(id)) next.nameColor = remove ? '' : id;
+    if (usernameColorOf(id) && !remove) next.glow = ''; // picking a color clears a stale color-in-glow value
+    const item = avatarItemById.get(id); const nextProfile = item?.kind === 'profile' ? (remove ? '' : id) : profile; const nextBackground = item?.kind === 'background' ? (remove ? '' : id) : background; if (await save(nextProfile, nextBackground, next)) { setProfile(nextProfile); setBackground(nextBackground); setEquipped(next); onProfileChange?.(nextProfile, nextBackground); onChatCosmeticsChange?.(next); setNotice(`${catalog[id]?.name || item?.name || id} ${remove ? 'unequipped' : 'equipped'}!`); } setBusy(null); };
   const isEquipped = (id: string) => profile === id || background === id || Object.values(equipped).includes(id);
   const chatStyleId = CHAT_STYLE_IDS.includes(equipped.style) ? equipped.style : '';
   const equippedColor = usernameColorOf(equipped.glow);

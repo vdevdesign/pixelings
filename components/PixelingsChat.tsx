@@ -1,28 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { supabase } from '../lib/supabaseClient';
-
-// Approved GIFs live in src/assets/approved-gifs/ with a manifest.json listing
-// the filenames, exactly like the campaign-hub picker this mirrors. Globbing
-// eagerly gives us asset URLs that survive the Vite build.
-const GIF_MODULES = import.meta.glob('../src/assets/approved-gifs/*.{gif,png,jpg,jpeg,webp}', {
-  eager: true,
-  import: 'default',
-}) as Record<string, string>;
-type ApprovedGif = { name: string; url: string };
-const APPROVED_GIFS: ApprovedGif[] = (() => {
-  const manifest = import.meta.glob('../src/assets/approved-gifs/manifest.json', {
-    eager: true,
-    import: 'default',
-  }) as Record<string, string[]>;
-  const names = Object.values(manifest)[0] || [];
-  return names
-    .map((fileName: string) => {
-      const match = Object.entries(GIF_MODULES).find(([path]) => path.endsWith('/' + fileName));
-      return match ? { name: fileName.replace(/\.[^.]+$/, ''), url: match[1] } : null;
-    })
-    .filter((gif): gif is ApprovedGif => gif !== null);
-})();
-const GIF_MESSAGE_PREFIX = '[gif] ';
+import { APPROVED_GIFS, GIF_MESSAGE_PREFIX, type ApprovedGif } from './approvedGifs';
 import { usePixelingsChat } from '../src/hooks/usePixelingsChat';
 import { CHAT_ROOMS, ChatRoom } from './chatRooms';
 import { avatarItemById, profileItems } from './avatarItems';
@@ -30,9 +8,8 @@ import { avatarItemById, profileItems } from './avatarItems';
 const PIXEL_STICKERS = ['✨', '🎉', '🧪', '🔥'];
 const COIN_EMOJI = '\u{1FA99}';
 const VFX_EMOJIS = [{ emoji: COIN_EMOJI, label: 'Coin burst' }];
-// Username color cosmetics share the 'glow' slot with the old neon glow.
-// A color id ('name-*') tints the student's chat name; 'neon-glow' keeps the
-// soft electric aura.
+// Username color cosmetics: the color lives in its own slot so it can be worn
+// with or without the glow. The glow item adds an aura on top of any color.
 const USERNAME_NAME_COLORS: Record<string, string> = {
   'name-coral': '#ff8a7a',
   'name-mint': '#7ef0c2',
@@ -43,7 +20,7 @@ const USERNAME_NAME_COLORS: Record<string, string> = {
   'name-lime': '#c6f95e',
   'name-aqua': '#7fe8ff',
 };
-const isNameColor = (glow: string) => glow.startsWith('name-');
+const isNameColor = (id: string) => id.startsWith('name-');
 const QUICK_NEEDS = [
   { label: 'Bathroom', emoji: '🚽', message: 'I need to use the restroom' },
   { label: 'Water/Snack', emoji: '🍎', message: 'I am hungry or thirsty' },
@@ -107,7 +84,7 @@ interface ChatProps {
   allChatsLocked?: boolean;
   manualChatOverride?: boolean;
   onManualStatusChange?: (isLive: boolean) => void;
-  chatCosmetics?: { glow: string; tag: string; stickers: string; vfx: string; style: string };
+  chatCosmetics?: { glow: string; tag: string; stickers: string; vfx: string; style: string; nameColor?: string };
   ownedItems?: string[];
   onChatStyleChange?: (style: string) => void | Promise<void>;
   /** Mirror the moderation queue (flagged messages + nickname requests) up to
@@ -481,8 +458,8 @@ export const PixelingsChat: React.FC<ChatProps> = ({
               <div key={msg.id} className={`message ${isMe ? 'mine' : ''} ${msg.is_whisper ? 'whisper' : ''}`}>
                 {!isSameSender && (
                   <div className="message-meta" onMouseEnter={() => setOpenUsername(msg.id)} onMouseLeave={() => setOpenUsername((open) => open === msg.id ? null : open)}>
-                    <span className={`chat-profile-icon ${isMe && chatCosmetics.glow && !isNameColor(chatCosmetics.glow) ? 'chat-name-glow' : ''}`} style={{ backgroundImage: profileBackground ? `url(${profileBackground.src})` : undefined }}><img src={profileIcon.src} alt={`${msg.sender_name}'s profile icon`} /></span>
-                    <button type="button" className={`message-name ${isMe && chatCosmetics.glow && !isNameColor(chatCosmetics.glow) ? 'chat-name-glow' : ''}`} style={isMe && isNameColor(chatCosmetics.glow) ? { color: USERNAME_NAME_COLORS[chatCosmetics.glow] } : undefined} onClick={() => setOpenUsername(openUsername === msg.id ? null : msg.id)} title="Show username">
+                    <span className={`chat-profile-icon ${isMe && chatCosmetics.glow ? 'chat-name-glow' : ''}`} style={{ backgroundImage: profileBackground ? `url(${profileBackground.src})` : undefined }}><img src={profileIcon.src} alt={`${msg.sender_name}'s profile icon`} /></span>
+                    <button type="button" className={`message-name ${isMe && chatCosmetics.glow ? 'chat-name-glow' : ''}`} style={isMe && chatCosmetics.nameColor && isNameColor(chatCosmetics.nameColor) ? { color: USERNAME_NAME_COLORS[chatCosmetics.nameColor] } : undefined} onClick={() => setOpenUsername(openUsername === msg.id ? null : msg.id)} title="Show username">
                       {msg.sender_name}
                     </button>
                     {isMe && chatCosmetics.tag && <span className="equipped-chat-tag">{chatCosmetics.tag.replace(/^tag-/, '').replace(/-/g, ' ')}</span>}

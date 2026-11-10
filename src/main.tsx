@@ -48,7 +48,7 @@ interface StoredKidSession {
   approvedNickname: string;
   profileAvatarId: string;
   profileBackgroundId: string;
-  chatCosmetics: { glow: string; tag: string; stickers: string; vfx: string; style: string };
+  chatCosmetics: { glow: string; tag: string; stickers: string; vfx: string; style: string; nameColor: string };
   lastSeen: number;
 }
 function readKidSession(): StoredKidSession | null {
@@ -86,7 +86,7 @@ function App() {
   const [approvedNickname, setApprovedNickname] = React.useState('');
   const [profileAvatarId, setProfileAvatarId] = React.useState('');
   const [profileBackgroundId, setProfileBackgroundId] = React.useState('');
-  const [chatCosmetics, setChatCosmetics] = React.useState({ glow: '', tag: '', stickers: '', vfx: '', style: '' });
+  const [chatCosmetics, setChatCosmetics] = React.useState({ glow: '', tag: '', stickers: '', vfx: '', style: '', nameColor: '' });
   const [loginError, setLoginError] = React.useState('');
   const [failedStaffAttempts, setFailedStaffAttempts] = React.useState(0);
   const [failedKidAttempts, setFailedKidAttempts] = React.useState(0);
@@ -220,7 +220,7 @@ function App() {
     setApprovedNickname(profile.approved_nickname || '');
     setProfileAvatarId(profile.avatar_url || 'profile-happy-slime');
     setProfileBackgroundId(profile.background_url || 'background-happy-slime');
-    setChatCosmetics({ glow: profile.equipped_chat_glow || '', tag: profile.equipped_chat_tag || '', stickers: profile.equipped_chat_stickers || '', vfx: profile.equipped_chat_vfx || '', style: profile.equipped_chat_style || '' });
+    setChatCosmetics({ glow: profile.equipped_chat_glow || '', tag: profile.equipped_chat_tag || '', stickers: profile.equipped_chat_stickers || '', vfx: profile.equipped_chat_vfx || '', style: profile.equipped_chat_style || '', nameColor: (profile as { equipped_chat_name_color?: string | null }).equipped_chat_name_color || '' });
     setLoggedIn(true);
   };
 
@@ -266,7 +266,7 @@ function App() {
         setApprovedNickname('');
         setProfileAvatarId('');
         setProfileBackgroundId('');
-        setChatCosmetics({ glow: '', tag: '', stickers: '', vfx: '', style: '' });
+        setChatCosmetics({ glow: '', tag: '', stickers: '', vfx: '', style: '', nameColor: '' });
         setWalletBalance(null);
         setOwnedItems([]);
         setEmailPassword('');
@@ -419,7 +419,7 @@ function App() {
     const { data: childProfile } = await supabase.from('profiles').select('avatar_url, background_url, equipped_chat_glow, equipped_chat_tag, equipped_chat_stickers, equipped_chat_vfx, equipped_chat_style').eq('id', selectedChild.id).single();
     setProfileAvatarId(childProfile?.avatar_url || 'profile-happy-slime');
     setProfileBackgroundId(childProfile?.background_url || 'background-happy-slime');
-    const childCosmetics = { glow: childProfile?.equipped_chat_glow || '', tag: childProfile?.equipped_chat_tag || '', stickers: childProfile?.equipped_chat_stickers || '', vfx: childProfile?.equipped_chat_vfx || '', style: childProfile?.equipped_chat_style || '' };
+    const childCosmetics = { glow: childProfile?.equipped_chat_glow || '', tag: childProfile?.equipped_chat_tag || '', stickers: childProfile?.equipped_chat_stickers || '', vfx: childProfile?.equipped_chat_vfx || '', style: childProfile?.equipped_chat_style || '', nameColor: (childProfile as { equipped_chat_name_color?: string | null } | null)?.equipped_chat_name_color || '' };
     setChatCosmetics(childCosmetics);
     setIsTeacher(false);
     setIsInstantPreview(false);
@@ -539,7 +539,7 @@ function App() {
     setApprovedNickname('');
     setProfileAvatarId('');
     setProfileBackgroundId('');
-    setChatCosmetics({ glow: '', tag: '', stickers: '', vfx: '', style: '' });
+    setChatCosmetics({ glow: '', tag: '', stickers: '', vfx: '', style: '', nameColor: '' });
     setEmailPassword('');
     setKidEmailVerified(false);
     setFirstName('');
@@ -770,7 +770,7 @@ function App() {
           </>
           : activeTab === 'inventory' ? <>
             <section className="hero"><h1>My <em>Inventory</em></h1></section>
-            <InventoryPage accountId={authUserId} demoMode={isInstantPreview} balance={walletBalance} ownedItems={ownedItems} onOwnedChange={setOwnedItems} onBalanceChange={setWalletBalance} onProfileChange={(avatarId, backgroundId) => { setProfileAvatarId(avatarId); setProfileBackgroundId(backgroundId); }} onChatCosmeticsChange={setChatCosmetics} />
+            <InventoryPage accountId={authUserId} demoMode={isInstantPreview} balance={walletBalance} ownedItems={ownedItems} onOwnedChange={setOwnedItems} onBalanceChange={setWalletBalance} onProfileChange={(avatarId, backgroundId) => { setProfileAvatarId(avatarId); setProfileBackgroundId(backgroundId); }} onChatCosmeticsChange={(cosmetics) => setChatCosmetics((current) => ({ ...current, ...cosmetics }))} />
           </>
           : <>
             <section className="hero"><h1>Stardust <em>Shop</em></h1></section>

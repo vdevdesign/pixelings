@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabaseClient';
+import { AccountOverview } from './AccountOverview';
 
 interface Student {
   id: string;
@@ -15,7 +16,7 @@ interface QuickNeed {
 }
 
 export const TeacherDashboard: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<'roster' | 'communication'>('roster');
+  const [activeTab, setActiveTab] = useState<'roster' | 'communication' | 'accounts'>('roster');
   const [students, setStudents] = useState<Student[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -172,6 +173,12 @@ export const TeacherDashboard: React.FC = () => {
           🎓 Student Roster
         </button>
         <button 
+          className={activeTab === 'accounts' ? 'active' : ''} 
+          onClick={() => setActiveTab('accounts')}
+        >
+          Accounts
+        </button>
+        <button 
           className={activeTab === 'communication' ? 'active' : ''} 
           onClick={() => setActiveTab('communication')}
         >
@@ -180,7 +187,11 @@ export const TeacherDashboard: React.FC = () => {
       </nav>
 
       <main className="dashboard-content">
-        {activeTab === 'roster' ? (
+        {activeTab === 'accounts' ? (
+          <div className="tab-panel">
+            <AccountOverview />
+          </div>
+        ) : activeTab === 'roster' ? (
           <div className="tab-panel">
             <section className="manager-card">
               <h2 className="card-title">Add New Students</h2>

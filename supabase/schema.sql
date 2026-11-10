@@ -41,17 +41,18 @@ update public.stardust_shop set active = false where id in (
 -- Safety net: register the username-color items in databases created before
 -- they existed.
 insert into public.stardust_shop (id, name, description, category, price, emoji, sort_order) values
-  ('name-coral', 'Coral Name', 'Tint your chat username with a warm coral hue.', 'Identity', 140, '🪸', 4),
-  ('name-mint', 'Mint Name', 'Tint your chat username with a fresh mint hue.', 'Identity', 140, '🌿', 5),
-  ('name-lilac', 'Lilac Name', 'Tint your chat username with a soft lilac hue.', 'Identity', 140, '💜', 6),
-  ('name-honey', 'Honey Name', 'Tint your chat username with a golden honey hue.', 'Identity', 140, '🍯', 7),
-  ('name-sky', 'Sky Name', 'Tint your chat username with a clear sky hue.', 'Identity', 140, '🌤️', 8),
-  ('name-rose', 'Rose Name', 'Tint your chat username with a rosy pink hue.', 'Identity', 140, '🌹', 9),
-  ('name-lime', 'Lime Name', 'Tint your chat username with a zesty lime hue.', 'Identity', 140, '🍋', 10),
-  ('name-aqua', 'Aqua Name', 'Tint your chat username with a cool aqua hue.', 'Identity', 140, '🌊', 11)
+  ('name-coral', 'Coral Name', 'Tint your chat username with a warm coral hue.', 'Identity', 100, '🪸', 4),
+  ('name-mint', 'Mint Name', 'Tint your chat username with a fresh mint hue.', 'Identity', 100, '🌿', 5),
+  ('name-lilac', 'Lilac Name', 'Tint your chat username with a soft lilac hue.', 'Identity', 100, '💜', 6),
+  ('name-honey', 'Honey Name', 'Tint your chat username with a golden honey hue.', 'Identity', 100, '🍯', 7),
+  ('name-sky', 'Sky Name', 'Tint your chat username with a clear sky hue.', 'Identity', 100, '🌤️', 8),
+  ('name-rose', 'Rose Name', 'Tint your chat username with a rosy pink hue.', 'Identity', 100, '🌹', 9),
+  ('name-lime', 'Lime Name', 'Tint your chat username with a zesty lime hue.', 'Identity', 100, '🍋', 10),
+  ('name-aqua', 'Aqua Name', 'Tint your chat username with a cool aqua hue.', 'Identity', 100, '🌊', 11)
 on conflict (id) do nothing;
 -- Refresh prices and labels so rerunning schema.sql keeps the shop in sync.
-update public.stardust_shop set price = 140 where id in ('name-coral','name-mint','name-lilac','name-honey','name-sky','name-rose','name-lime','name-aqua');
+update public.stardust_shop set price = 100 where id in ('name-coral','name-mint','name-lilac','name-honey','name-sky','name-rose','name-lime','name-aqua');
+update public.stardust_shop set price = 200 where id = 'neon-glow';
 update public.stardust_shop set price = 250 where id in ('cyber-style','style-pastel-dream','style-forest-grove','style-sunset-vibes','style-deep-space','style-candy-pop');
 update public.stardust_shop set price = 320 where id in ('style-blocky-craft','style-redstone-forge','style-kanto-league','style-team-rocket','style-green-hills','style-star-chili-dogs','style-mushroom-speedway');
 create table if not exists public.stardust_wallets (
@@ -75,7 +76,7 @@ create table if not exists public.stardust_inventory (
   primary key (user_id, item_id)
 );
 insert into public.stardust_shop (id, name, description, category, price, emoji, sort_order) values
-  ('neon-glow', 'Neon Username Glow', 'Give your chat name a soft electric aura.', 'Identity', 180, '◈', 2),
+  ('neon-glow', 'Neon Username Glow', 'Give your chat name a soft electric aura.', 'Identity', 200, '◈', 2),
  ('vip-title', 'VIP Chat Title', 'A tiny [VIP] tag to flex beside your name.', 'Identity', 250, '★', 3),
  -- Username color cosmetics: tint the chat name. Cheaper than a glow, pricier than a tag.
  ('name-coral', 'Coral Name', 'Tint your chat username with a warm coral hue.', 'Identity', 140, '🪸', 4),
@@ -89,7 +90,7 @@ insert into public.stardust_shop (id, name, description, category, price, emoji,
 
  -- Wearable chat titles. Each is its own item so players can collect and show them off.
  ('tag-pixel-coin-collector', 'Pixel Coin Collector', 'Earned by hoarding every last pixel coin on the arcade floor.', 'Tags', 100, '🪙', 60),
- ('tag-stardust-acquirer', 'Stardust Acquirer', 'A cosmic traveler who has gathered glowing remnants from across the server.', 'Tags', 100, '🌠', 61),
+ ('tag-stardust-acquirer', 'Stardust Acquirer', 'A cosmic traveler who has gathered glowing remnants from across the server.', 'Tags', 1000, '🌠', 61),
  ('tag-chill-guy', 'Chill Guy', 'Never stressed, always vibing in the chat room no matter what happens.', 'Tags', 80, '😎', 62),
  ('tag-chill-gal', 'Chill Gal', 'Cool, calm, and collected, floating effortlessly through the chaos.', 'Tags', 80, '✌️', 63),
  ('tag-speed-runner', 'Speed Runner', 'Always blazing past objectives and finishing minigames in record time.', 'Tags', 120, '⚡', 64),

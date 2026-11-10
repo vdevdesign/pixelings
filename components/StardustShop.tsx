@@ -28,8 +28,16 @@ const USERNAME_COLORS = [
   { id: 'name-aqua', name: 'Aqua Name', css: '#7fe8ff', emoji: '🌊' },
 ];
 const NAME_COLOR_PRICE = 140; // cheaper than a glow, pricier than a tag
+// Retired artwork (baby dragon, blushy ghost, chomp monster, little night bat):
+// the images are gone from the app, so hide any leftover shop rows even if the
+// DB seed still lists them.
+const RETIRED_SHOP_IDS = new Set([
+  'profile-baby-dragon', 'profile-blushy-ghost', 'profile-chomp-monster', 'profile-little-night-bat',
+  'background-baby-dragon', 'background-blushy-ghost', 'background-chomp-monster', 'background-little-night-bat',
+]);
 const fallbackItems: ShopItem[] = [
-  ...avatarShopItems,
+  // Cosmetics first so the collapsed Identity section shows colors/glow/themes
+  // before the wall of avatar images.
   ...USERNAME_COLORS.map((color) => ({
     id: color.id,
     name: color.name,
@@ -51,8 +59,10 @@ const fallbackItems: ShopItem[] = [
   { id: 'style-star-chili-dogs', name: 'Chili Dog Nights Theme', description: 'A golden starry night skin for fast heroes with big appetites.', category: 'Chat', theme: 'fun', price: 250, emoji: '⭐' },
   { id: 'style-mushroom-speedway', name: 'Mushroom Speedway Theme', description: 'A kart-racing red mushroom skin with rainbow-road sparkles.', category: 'Chat', theme: 'fun', price: 250, emoji: '🍄' },
   // Wearable chat titles (the old generic VIP title was retired).
+  ...avatarShopItems,
   { id: 'tag-pixel-coin-collector', name: 'Pixel Coin Collector', description: 'Earned by hoarding every last pixel coin on the arcade floor.', category: 'Tags', theme: 'fun', price: 100, emoji: '🪙' },
-  { id: 'tag-stardust-acquirer', name: 'Stardust Acquirer', description: 'A cosmic traveler who has gathered glowing remnants from across the server.', category: 'Tags', theme: 'fun', price: 100, emoji: '🌠' },
+  // The most expensive tag in the shop — a badge for dedicated earners.
+  { id: 'tag-stardust-acquirer', name: 'Stardust Acquirer', description: 'A cosmic traveler who has gathered glowing remnants from across the server.', category: 'Tags', theme: 'fun', price: 1000, emoji: '🌠' },
   { id: 'tag-chill-guy', name: 'Chill Guy', description: 'Never stressed, always vibing in the chat room no matter what happens.', category: 'Tags', theme: 'fun', price: 80, emoji: '😎' },
   { id: 'tag-chill-gal', name: 'Chill Gal', description: 'Cool, calm, and collected, floating effortlessly through the chaos.', category: 'Tags', theme: 'fun', price: 80, emoji: '✌️' },
   { id: 'tag-speed-runner', name: 'Speed Runner', description: 'Always blazing past objectives and finishing minigames in record time.', category: 'Tags', theme: 'fun', price: 120, emoji: '⚡' },
@@ -100,7 +110,10 @@ export function StardustShop({
         // Merge DB rows with the bundled avatar items so profile pictures and
         // backgrounds always appear even if the DB seed is missing them.
         const dbIds = new Set(data.map((row) => row.id));
-        const merged = [...(data as ShopItem[]), ...avatarShopItems.filter((item) => !dbIds.has(item.id))].map((item) => item.id.startsWith('background-')
+        const merged = [
+          ...(data as ShopItem[]).filter((item) => !RETIRED_SHOP_IDS.has(item.id)),
+          ...avatarShopItems.filter((item) => !dbIds.has(item.id) && !RETIRED_SHOP_IDS.has(item.id)),
+        ].map((item) => item.id.startsWith('background-')
           ? { ...item, name: item.name.replace(/ Scene$/, ''), description: item.description.replace(' background for your Pixelings profile.', ' profile background for your Pixelings profile.') }
           : item);
         setItems(merged);
@@ -136,7 +149,7 @@ export function StardustShop({
     }
     setOwned([...owned, item.id]); setNotice(`${item.name} unlocked!`);
   };
-  const shopItems = items.filter((item) => canManage || (item.active ?? true));
+  const shopItems = items.filter((item) => (canManage || (item.active ?? true)) && !RETIRED_SHOP_IDS.has(item.id));
   // Category filter — matches the actual grouping headers below so students
   // can jump straight to what they want. 'All' shows everything.
   const CATEGORY_FILTERS = ['All', 'Identity', 'Chat', 'Effects', 'Tags'] as const;
