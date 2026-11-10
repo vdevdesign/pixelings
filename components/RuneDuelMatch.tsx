@@ -55,13 +55,14 @@ export function RuneDuelMatch({ onBalanceChange }: { onBalanceChange?: (delta: n
   // header counter is gone — the HUD and wallet update via the RPC result.
   const award = React.useCallback(async (amount: number) => {
     setRoundEarned((value) => value + amount);
-    onBalanceChange?.(amount);
     const { data, error } = await supabase.rpc('award_game_stardust', { game: 'elemental', requested: amount });
     if (error) {
       setMessage('Could not save your reward. Please tell your teacher.');
       return;
     }
     const result = Array.isArray(data) ? data[0] : data as { granted: number; daily_total: number; cap: number };
+    // Mirror the server-granted amount (cap-aware) into the header HUD.
+    if (result && Number(result.granted) > 0) onBalanceChange?.(Number(result.granted));
     if (result && Number(result.granted) === 0) setMessage('Daily Stardust limit reached for this game — keep playing for fun!');
   }, [onBalanceChange]);
 

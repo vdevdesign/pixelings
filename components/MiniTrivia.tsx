@@ -45,6 +45,8 @@ export function MiniTrivia({ userId, demoMode = false, onBalanceChange }: { user
     }
     const result = Array.isArray(data) ? data[0] : data as { granted: number; daily_total: number; cap: number };
     if (result && Number(result.granted) === 0) setStatus(`Correct! Daily limit reached for trivia — keep playing for fun!`);
+    // Mirror the server-granted amount (cap-aware) into the header HUD.
+    if (result && Number(result.granted) > 0) onBalanceChange?.(Number(result.granted));
   }, [demoMode, userId, onBalanceChange]);
 
   const answer = useCallback((index: number | null) => {

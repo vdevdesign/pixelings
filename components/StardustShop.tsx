@@ -219,7 +219,7 @@ export function StardustShop({
         const hiddenCount = group.items.length - COLLAPSED_LIMIT;
         return <React.Fragment key={group.label}>
         <h3 className="shop-group-heading">{group.label}</h3>
-        <div className="shop-grid">{visibleItems.map((item) => { const avatar = avatarFor(item.id); return <article className={`shop-item ${avatar ? `shop-avatar-item shop-avatar-${avatar.kind}` : ''} ${(item.active ?? true) ? '' : 'shop-item-hidden'}`} key={item.id}><div className="item-icon">{avatar ? <img className="shop-item-thumb" src={avatar.src} alt={item.name} loading="lazy" /> : item.emoji}</div><h4>{item.name}</h4>
+        <div className="shop-grid">{visibleItems.map((item) => { const avatar = avatarFor(item.id); return <article className={`shop-item ${avatar ? `shop-avatar-item shop-avatar-${avatar.kind}` : ''} ${(item.active ?? true) ? '' : 'shop-item-hidden'}`} key={item.id}><div className="item-icon">{avatar ? <img className="shop-item-thumb" src={avatar.src} alt={item.name} loading="lazy" /> : item.emoji}</div><span className="item-price-badge" title={`${item.price} Stardust`}>{item.price} ✦</span><h4>{item.name}</h4>
           {item.id === 'neon-glow' && <div className="item-preview"><span className="preview-glow-name">MissV</span></div>}
           {item.id === 'coin-vfx' && <div className="item-preview"><div className="preview-coin-burst"><span>🪙</span><span>🪙</span><span>🪙</span></div></div>}
           {(CHAT_STYLE_IDS.includes(item.id) || USERNAME_COLORS.some((color) => color.id === item.id)) && (
@@ -229,7 +229,7 @@ export function StardustShop({
                 : <div className={`preview-theme-msg preview-${item.id}`}>hey pixelings! 👋</div>}
             </div>
           )}
-        <button onClick={() => buy(item)} disabled={owned.includes(item.id)}>{owned.includes(item.id) ? 'Owned ✓' : (canManage || demoMode) ? 'Take it · Free' : `Buy · ${item.price} ✦`}</button>{canManage && <button className="item-visibility-toggle" onClick={() => toggleActive(item)}>{(item.active ?? true) ? 'Public 👁' : 'Hidden 🙈'}</button>}</article>; })}</div>
+        <button onClick={() => buy(item)} disabled={owned.includes(item.id)}>{owned.includes(item.id) ? 'Owned ✓' : (canManage || demoMode) ? 'Take it · Free' : 'Buy'}</button>{canManage && <button className="item-visibility-toggle" onClick={() => toggleActive(item)}>{(item.active ?? true) ? 'Public 👁' : 'Hidden 🙈'}</button>}</article>; })}</div>
         {group.items.length > COLLAPSED_LIMIT && <button className="view-all-btn" onClick={() => setExpandedGroups((state) => ({ ...state, [group.label]: !state[group.label] }))}>{collapsed ? `View all ${hiddenCount} more · ${group.items.length}` : 'Show less'}</button>}
       </React.Fragment>;
       })}{notice && <div className="shop-notice">{notice}</div>}</section>;
