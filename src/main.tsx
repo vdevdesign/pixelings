@@ -36,6 +36,36 @@ function NavIcon({ name }: { name: keyof typeof NAV_ICONS | string }) {
 // Browsers restore the previous scroll position on reload; always start at the top.
 if ('scrollRestoration' in window.history) window.history.scrollRestoration = 'manual';
 
+// Persisted kid sessions: a student stays logged in across reloads until they
+// log out, but after an hour of inactivity they must re-enter their name and
+// access code (the classroom email/password stays valid in the background).
+const KID_SESSION_KEY = 'pixelings-kid-session';
+const IDLE_LIMIT_MS = 60 * 60 * 1000; // 1 hour minimum before the code is required again
+interface StoredKidSession {
+  authUserId: string;
+  userId: string;
+  computer: string;
+  approvedNickname: string;
+  profileAvatarId: string;
+  profileBackgroundId: string;
+  chatCosmetics: { glow: string; tag: string; stickers: string; vfx: string; style: string };
+  lastSeen: number;
+}
+function readKidSession(): StoredKidSession | null {
+  try {
+    const raw = localStorage.getItem(KID_SESSION_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as StoredKidSession;
+    return parsed && parsed.authUserId && parsed.userId ? parsed : null;
+  } catch { return null; }
+}
+function writeKidSession(session: StoredKidSession) {
+  try { localStorage.setItem(KID_SESSION_KEY, JSON.stringify(session)); } catch { /* private mode */ }
+}
+function clearKidSession() {
+  try { localStorage.removeItem(KID_SESSION_KEY); } catch { /* private mode */ }
+}
+
 function App() {
   const showInstantTest = import.meta.env.DEV && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
   const [loginType, setLoginType] = React.useState<'staff' | 'kid'>('kid');
@@ -167,6 +197,29 @@ function App() {
   };
 
   React.useEffect(() => {
+    // Restore a persisted kid session before wiring auth listeners so the
+    // INITIAL_SESSION event doesn't overwrite the kid identity with the
+    // shared classroom account's profile.
+    const storedKid = readKidSession();
+    if (storedKid && Date.now() - storedKid.lastSeen < IDLE_LIMIT_MS) {
+      kidLoginInProgress.current = true;
+      setAuthUserId(storedKid.authUserId);
+      setUserId(storedKid.userId);
+      setComputer(storedKid.computer);
+      setRole('computer');
+      setIsTeacher(false);
+      setIsInstantPreview(false);
+      setApprovedNickname(storedKid.approvedNickname);
+      setProfileAvatarId(storedKid.profileAvatarId || 'profile-happy-slime');
+      setProfileBackgroundId(storedKid.profileBackgroundId || 'background-happy-slime');
+      setChatCosmetics(storedKid.chatCosmetics);
+      setLastActivity(Math.max(storedKid.lastSeen, Date.now() - IDLE_LIMIT_MS + 1));
+      setLoggedIn(true);
+    } else if (storedKid) {
+      // Stale beyond the idle limit: drop it and ask for the code again.
+      clearKidSession();
+      setKidEmailVerified(true);
+    }
     const { data: authListener } = supabase.auth.onAuthStateChange((event, session) => {
       if (event === 'PASSWORD_RECOVERY') {
         setResetMode(true);
@@ -206,22 +259,38 @@ function App() {
     return () => authListener.subscription.unsubscribe();
   }, []);
 
-  // Auto-timeout: Sign out after 30 minutes of inactivity
+  // Idle timeout: after an hour of inactivity kids must re-enter their name
+  // and access code (classroom auth survives); staff are signed out fully.
   React.useEffect(() => {
     if (!loggedIn) return;
     const interval = setInterval(() => {
       const now = Date.now();
-      if (now - lastActivity > 30 * 60 * 1000) {
-        void supabase.auth.signOut();
-        setLoggedIn(false);
+      if (now - lastActivity > IDLE_LIMIT_MS) {
+        if (readKidSession()) {
+          clearKidSession();
+          setLoggedIn(false);
+          setKidEmailVerified(true); // skip the email/password step, code only
+          setFirstName('');
+          setAccessCode('');
+          setActiveTab('home');
+        } else {
+          void supabase.auth.signOut();
+          setLoggedIn(false);
+        }
       }
     }, 60000); // Check every minute
     return () => clearInterval(interval);
   }, [loggedIn, lastActivity]);
 
-  // Global activity tracker
+  // Global activity tracker (also keeps the persisted kid session fresh)
   React.useEffect(() => {
-    const updateActivity = () => setLastActivity(Date.now());
+    const updateActivity = () => {
+      const now = Date.now();
+      setLastActivity(now);
+      const stored = readKidSession();
+      // Throttle writes: refresh the stored timestamp at most every 30 seconds.
+      if (stored && now - stored.lastSeen > 30 * 1000) writeKidSession({ ...stored, lastSeen: now });
+    };
     window.addEventListener('mousemove', updateActivity);
     window.addEventListener('keydown', updateActivity);
     window.addEventListener('click', updateActivity);
@@ -322,10 +391,22 @@ function App() {
     const { data: childProfile } = await supabase.from('profiles').select('avatar_url, background_url, equipped_chat_glow, equipped_chat_tag, equipped_chat_stickers, equipped_chat_vfx, equipped_chat_style').eq('id', selectedChild.id).single();
     setProfileAvatarId(childProfile?.avatar_url || 'profile-happy-slime');
     setProfileBackgroundId(childProfile?.background_url || 'background-happy-slime');
-    setChatCosmetics({ glow: childProfile?.equipped_chat_glow || '', tag: childProfile?.equipped_chat_tag || '', stickers: childProfile?.equipped_chat_stickers || '', vfx: childProfile?.equipped_chat_vfx || '', style: childProfile?.equipped_chat_style || '' });
+    const childCosmetics = { glow: childProfile?.equipped_chat_glow || '', tag: childProfile?.equipped_chat_tag || '', stickers: childProfile?.equipped_chat_stickers || '', vfx: childProfile?.equipped_chat_vfx || '', style: childProfile?.equipped_chat_style || '' };
+    setChatCosmetics(childCosmetics);
     setIsTeacher(false);
     setIsInstantPreview(false);
       setLoggedIn(true);
+    // Persist so a page reload keeps the kid logged in (until idle > 1 hour).
+    writeKidSession({
+      authUserId: classroom.user.id,
+      userId: selectedChild.id,
+      computer: selectedChild.username,
+      approvedNickname: selectedChild.approved_nickname || '',
+      profileAvatarId: childProfile?.avatar_url || 'profile-happy-slime',
+      profileBackgroundId: childProfile?.background_url || 'background-happy-slime',
+      chatCosmetics: childCosmetics,
+      lastSeen: Date.now(),
+    });
   };
 
   const handleStaffLogin = async () => {
@@ -412,6 +493,7 @@ function App() {
   const handleLogout = async () => {
     setLoginError('');
     kidLoginInProgress.current = false;
+    clearKidSession();
     if (!isInstantPreview) {
       const { error } = await supabase.auth.signOut();
       if (error) {
