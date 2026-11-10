@@ -19,7 +19,7 @@ export const AccessCodeLogin: React.FC<AccessCodeLoginProps> = ({
   onLogin,
   lockoutUntil
 }) => {
-  const isLockedOut = lockoutUntil && Date.now() < lockoutUntil;
+  const isLockedOut = !!lockoutUntil && Date.now() < lockoutUntil;
 
   return (
     <div className="access-code-container">

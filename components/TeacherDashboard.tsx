@@ -144,7 +144,7 @@ export const TeacherDashboard: React.FC = () => {
     else alert(`New magic code generated: ${randomCode}\n\nPlease save this code for the student!`);
   };
 
-  const handleAddQuickNeed = (e: React.FormEvent) => {
+  const handleAddQuickNeed = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     const form = e.currentTarget;
     const formData = new FormData(form);
