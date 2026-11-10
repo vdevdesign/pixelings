@@ -432,8 +432,25 @@ create policy "Users can view approved messages" on public.messages for select u
   or sender_id = auth.uid() or public.is_moderator()
 );
 drop policy if exists "Authenticated users can send messages" on public.messages;
+-- Kids authenticate through the shared classroom account but send as their
+-- individual child profile id, so accept sender ids belonging to a
+-- computer-role (student) profile as well as the caller's own id.
 create policy "Authenticated users can send messages" on public.messages for insert
-  to authenticated with check (sender_id = auth.uid() and exists (select 1 from public.sessions where id = session_id and (status = 'live' or public.is_moderator())));
+  to authenticated with check (
+    (
+      sender_id = auth.uid()
+      or exists (
+        select 1 from public.profiles
+        where profiles.id = sender_id
+          and profiles.role = 'computer'
+      )
+    )
+    and exists (
+      select 1 from public.sessions
+      where sessions.id = session_id
+        and (sessions.status = 'live' or public.is_moderator())
+    )
+  );
 drop policy if exists "Moderators can review messages" on public.messages;
 create policy "Moderators can review messages" on public.messages for update
   to authenticated using (public.is_moderator()) with check (public.is_moderator());

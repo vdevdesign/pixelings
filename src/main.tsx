@@ -167,6 +167,34 @@ function App() {
   };
 
   // Signed-in students with a pending claim just land on their claim status.
+  // App-wide nickname-request poll: the chat hook only loads pending nicknames
+  // while the Chat tab is mounted, so the bell badge would vanish on Home,
+  // Games, Shop, etc. Poll here too (every 30s) and merge results into the
+  // moderation queue whenever the chat component is not already supplying
+  // fresher data.
+  React.useEffect(() => {
+    if (!isTeacher || isInstantPreview || activeTab === 'chat') return;
+    let cancelled = false;
+    const pull = async () => {
+      const { data } = await supabase.from('profiles').select('id, username, pending_nickname').eq('nickname_status', 'pending');
+      if (cancelled) return;
+      const requests = (data || [] as { id: string; username: string; pending_nickname: string }[]).map((row) => ({ id: row.id, username: row.username, nickname: row.pending_nickname }));
+      setModerationQueue((queue) => queue.nicknameRequests.length === requests.length && requests.every((r, i) => queue.nicknameRequests[i]?.id === r.id) ? queue : {
+        ...queue,
+        nicknameRequests: requests,
+        handlers: {
+          approveMessage: queue.handlers.approveMessage,
+          rejectMessage: queue.handlers.rejectMessage,
+          approveNickname: (id) => { void supabase.rpc('approve_nickname', { student_id: id, approve: true }).then(() => pull()); },
+          rejectNickname: (id) => { void supabase.rpc('approve_nickname', { student_id: id, approve: false }).then(() => pull()); },
+        },
+      });
+    };
+    void pull();
+    const timer = window.setInterval(pull, 30000);
+    return () => { cancelled = true; window.clearInterval(timer); };
+  }, [isTeacher, isInstantPreview, activeTab]);
+
   React.useEffect(() => {
     if (!authUserId || isInstantPreview) return;
     void supabase.from('account_claims').select('id, status').eq('requested_by', authUserId).order('created_at', { ascending: false }).limit(1)
